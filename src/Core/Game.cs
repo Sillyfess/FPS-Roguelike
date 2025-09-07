@@ -94,6 +94,16 @@ public class Game : IDisposable
     private uint vao, vbo, ebo;
     private uint shaderProgram;
     
+    // GPU Instancing
+    private uint instancedShaderProgram;
+    private uint enemyInstanceVBO;
+    private uint projectileInstanceVBO;
+    private const int MAX_ENEMY_INSTANCES = 30;  // Support up to 30 enemies
+    private Matrix4x4[] enemyInstanceData = new Matrix4x4[MAX_ENEMY_INSTANCES];
+    private Vector3[] enemyInstanceColors = new Vector3[MAX_ENEMY_INSTANCES];
+    private Matrix4x4[] projectileInstanceData = new Matrix4x4[MAX_PROJECTILES];
+    private Vector3[] projectileInstanceColors = new Vector3[MAX_PROJECTILES];
+    
     // Camera and movement constants
     private const float PLAYER_START_HEIGHT = 1.7f;
     private const float PLAYER_START_Z = -10f;
@@ -104,15 +114,12 @@ public class Game : IDisposable
     private Vector3 playerStartPosition = new Vector3(0, PLAYER_START_HEIGHT, PLAYER_START_Z);
     
     // Combat constants
-    private const float HIT_MARKER_DURATION = 2.0f;
     private const int MAX_PROJECTILES = 100;
     private const float WAVE_DELAY = 5f;
     private const float PLAYER_RADIUS = 0.5f;
     
     // Combat
     private Weapon? weapon;
-    private List<(Vector3 position, float timeRemaining)> hitMarkers = new List<(Vector3, float)>();
-    private HashSet<int> destroyedCubes = new HashSet<int>();
     
     // Enemies
     private List<Enemy> enemies = new List<Enemy>();
@@ -215,7 +222,7 @@ public class Game : IDisposable
         frameCount++;
         if (fpsTimer >= 1.0)
         {
-            fps = frameCount / fpsTimer;
+            fps = fpsTimer > 0 ? frameCount / fpsTimer : 0;
             frameCount = 0;
             fpsTimer = 0;
         }
@@ -420,14 +427,9 @@ public class Game : IDisposable
         // Update projectiles (use normal time)
         UpdateProjectiles(dt);
         
-        // Update hit markers (use normal time)
-        UpdateHitMarkers(dt);
-        
         // Check for wave completion
         CheckWaveCompletion(dt);
         
-        // Update cube rotation for visual interest (use normal time)
-        rotation += dt * 50.0f;
         
         // Debug output
         if (inputSystem.IsKeyJustPressed(Key.F1))
@@ -495,6 +497,12 @@ public class Game : IDisposable
         
         // Create simple shaders
         CreateSimpleShader();
+        
+        // Create instanced shader for enemies and projectiles
+        CreateInstancedShader();
+        
+        // Setup instance buffers
+        SetupInstanceBuffers();
     }
     
     private void CreateSimpleShader()
@@ -598,21 +606,130 @@ void main()
         gl.DeleteShader(fragmentShader);
     }
     
-    private float rotation = 0.0f;
-    
-    // Cube positions for the scene
-    private readonly Vector3[] cubePositions = new Vector3[]
+    private void CreateInstancedShader()
     {
-        new Vector3(0, 1, 0),      // Center floating cube
-        new Vector3(5, 1, 5),      // Corner cubes
-        new Vector3(-5, 1, 5),
-        new Vector3(5, 1, -5),
-        new Vector3(-5, 1, -5),
-        new Vector3(10, 2, 0),     // Distant cubes
-        new Vector3(-10, 2, 0),
-        new Vector3(0, 2, 10),
-        new Vector3(0, 2, -10),
-    };
+        // Instanced vertex shader
+        string instancedVertexShader = @"
+#version 330 core
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aNormal;
+layout (location = 2) in mat4 instanceMatrix;  // Takes locations 2,3,4,5
+layout (location = 6) in vec3 instanceColor;
+
+out vec3 FragPos;
+out vec3 Normal;
+out vec3 InstanceColor;
+
+uniform mat4 view;
+uniform mat4 projection;
+
+void main()
+{
+    FragPos = vec3(instanceMatrix * vec4(aPos, 1.0));
+    Normal = mat3(transpose(inverse(instanceMatrix))) * aNormal;
+    InstanceColor = instanceColor;
+    gl_Position = projection * view * vec4(FragPos, 1.0);
+}";
+
+        // Instanced fragment shader
+        string instancedFragmentShader = @"
+#version 330 core
+in vec3 FragPos;
+in vec3 Normal;
+in vec3 InstanceColor;
+out vec4 FragColor;
+
+void main()
+{
+    // Same lighting as regular shader
+    vec3 lightDir = normalize(vec3(-0.5, -1.0, -0.3));
+    vec3 lightColor = vec3(1.0, 1.0, 1.0);
+    
+    float ambientStrength = 0.4;
+    vec3 ambient = ambientStrength * lightColor * InstanceColor;
+    
+    vec3 norm = normalize(Normal);
+    float diff = max(dot(norm, -lightDir), 0.0);
+    vec3 diffuse = diff * lightColor * InstanceColor;
+    
+    vec3 viewDir = normalize(-FragPos);
+    vec3 reflectDir = reflect(lightDir, norm);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
+    vec3 specular = 0.3 * spec * lightColor;
+    
+    vec3 result = ambient + diffuse + specular;
+    FragColor = vec4(result, 1.0);
+}";
+
+        // Compile instanced vertex shader
+        uint vertexShader = gl.CreateShader(ShaderType.VertexShader);
+        gl.ShaderSource(vertexShader, instancedVertexShader);
+        gl.CompileShader(vertexShader);
+        
+        gl.GetShader(vertexShader, ShaderParameterName.CompileStatus, out int vertexSuccess);
+        if (vertexSuccess == 0)
+        {
+            string infoLog = gl.GetShaderInfoLog(vertexShader);
+            throw new Exception($"Instanced vertex shader compilation failed: {infoLog}");
+        }
+        
+        // Compile instanced fragment shader
+        uint fragmentShader = gl.CreateShader(ShaderType.FragmentShader);
+        gl.ShaderSource(fragmentShader, instancedFragmentShader);
+        gl.CompileShader(fragmentShader);
+        
+        gl.GetShader(fragmentShader, ShaderParameterName.CompileStatus, out int fragmentSuccess);
+        if (fragmentSuccess == 0)
+        {
+            string infoLog = gl.GetShaderInfoLog(fragmentShader);
+            throw new Exception($"Instanced fragment shader compilation failed: {infoLog}");
+        }
+        
+        // Link instanced shader program
+        instancedShaderProgram = gl.CreateProgram();
+        gl.AttachShader(instancedShaderProgram, vertexShader);
+        gl.AttachShader(instancedShaderProgram, fragmentShader);
+        gl.LinkProgram(instancedShaderProgram);
+        
+        gl.GetProgram(instancedShaderProgram, ProgramPropertyARB.LinkStatus, out int linkSuccess);
+        if (linkSuccess == 0)
+        {
+            string infoLog = gl.GetProgramInfoLog(instancedShaderProgram);
+            throw new Exception($"Instanced shader linking failed: {infoLog}");
+        }
+        
+        gl.DeleteShader(vertexShader);
+        gl.DeleteShader(fragmentShader);
+    }
+    
+    private void SetupInstanceBuffers()
+    {
+        // Create enemy instance VBO
+        enemyInstanceVBO = gl.GenBuffer();
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, enemyInstanceVBO);
+        // Allocate buffer for matrices + colors (16 floats for matrix + 3 for color = 19 floats per instance)
+        unsafe
+        {
+            gl.BufferData(BufferTargetARB.ArrayBuffer, 
+                (nuint)(MAX_ENEMY_INSTANCES * (16 + 3) * sizeof(float)), 
+                null, 
+                BufferUsageARB.DynamicDraw);
+        }
+        
+        // Create projectile instance VBO
+        projectileInstanceVBO = gl.GenBuffer();
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, projectileInstanceVBO);
+        unsafe
+        {
+            gl.BufferData(BufferTargetARB.ArrayBuffer, 
+                (nuint)(MAX_PROJECTILES * (16 + 3) * sizeof(float)), 
+                null, 
+                BufferUsageARB.DynamicDraw);
+        }
+        
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+    }
+    
     
     
     private void RenderTestCube(double interpolation, double renderDeltaTime)
@@ -638,35 +755,6 @@ void main()
             view, projection
         );
         
-        // Render multiple cubes at different positions
-        for (int i = 0; i < cubePositions.Length; i++)
-        {
-            // Skip destroyed cubes
-            if (destroyedCubes.Contains(i)) continue;
-            
-            // Animate only the first cube
-            float currentRotation = i == 0 ? rotation : 45f * i;
-            
-            Matrix4x4 model = 
-                Matrix4x4.CreateRotationY(currentRotation * (float)(Math.PI / 180.0)) *
-                Matrix4x4.CreateRotationX(currentRotation * 0.5f * (float)(Math.PI / 180.0)) *
-                Matrix4x4.CreateTranslation(cubePositions[i]);
-            
-            RenderCube(model, view, projection);
-        }
-        
-        // Render hit markers (red and pulsing)
-        foreach (var (hitPos, timeRemaining) in hitMarkers)
-        {
-            // Pulse effect based on time remaining
-            float scale = 0.3f + (0.1f * MathF.Sin(timeRemaining * 10f));
-            Matrix4x4 hitModel = 
-                Matrix4x4.CreateScale(scale) *
-                Matrix4x4.CreateTranslation(hitPos);
-            // Render in red
-            RenderCube(hitModel, view, projection, new Vector3(1.0f, 0.2f, 0.2f));
-        }
-        
         // Render obstacles
         foreach (var obstacle in obstacles)
         {
@@ -678,34 +766,216 @@ void main()
             RenderCube(obstacleModel, view, projection, obstacle.Color);
         }
         
-        // Render enemies as tall red cubes
+        // Render all enemies in a single draw call using GPU instancing
+        RenderEnemiesInstanced(view, projection);
+        
+        // Render all projectiles in a single draw call using GPU instancing
+        RenderProjectilesInstanced(view, projection);
+    }
+    
+    private void RenderEnemiesInstanced(Matrix4x4 view, Matrix4x4 projection)
+    {
+        // Prepare instance data for all active enemies
+        int instanceCount = 0;
         foreach (var enemy in enemies)
         {
-            if (!enemy.IsActive) continue;
+            if (!enemy.IsActive || instanceCount >= MAX_ENEMY_INSTANCES) continue;
             
-            Matrix4x4 enemyModel = 
-                Matrix4x4.CreateScale(1.5f, 2f, 1.5f) * // Taller than wide for visibility
-                Matrix4x4.CreateRotationY(enemy.GetYRotation()) * // Face player when attacking
+            // Build transformation matrix for this enemy
+            enemyInstanceData[instanceCount] = 
+                Matrix4x4.CreateScale(1.5f, 2f, 1.5f) *
+                Matrix4x4.CreateRotationY(enemy.GetYRotation()) *
                 Matrix4x4.CreateTranslation(enemy.Position);
             
-            RenderCube(enemyModel, view, projection, enemy.Color); // Red normally, white when hit
+            // Set color (red normally, white when hit)
+            enemyInstanceColors[instanceCount] = enemy.Color;
+            instanceCount++;
         }
         
-        // Render projectiles
+        if (instanceCount == 0) return; // No enemies to render
+        
+        // Update instance buffer with enemy data
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, enemyInstanceVBO);
+        unsafe
+        {
+            // Create combined data array (matrix + color for each instance)
+            float[] combinedData = new float[instanceCount * 19];
+            for (int i = 0; i < instanceCount; i++)
+            {
+                // Copy matrix (16 floats)
+                for (int j = 0; j < 16; j++)
+                {
+                    combinedData[i * 19 + j] = GetMatrixValue(enemyInstanceData[i], j);
+                }
+                // Copy color (3 floats)
+                combinedData[i * 19 + 16] = enemyInstanceColors[i].X;
+                combinedData[i * 19 + 17] = enemyInstanceColors[i].Y;
+                combinedData[i * 19 + 18] = enemyInstanceColors[i].Z;
+            }
+            
+            fixed (float* dataPtr = combinedData)
+            {
+                gl.BufferSubData(BufferTargetARB.ArrayBuffer, 0, 
+                    (nuint)(instanceCount * 19 * sizeof(float)), dataPtr);
+            }
+        }
+        
+        // Setup instanced rendering
+        gl.UseProgram(instancedShaderProgram);
+        gl.BindVertexArray(vao);
+        
+        // Setup instance attributes
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, enemyInstanceVBO);
+        
+        unsafe
+        {
+            // Instance matrix (locations 2,3,4,5)
+            for (uint i = 0; i < 4; i++)
+            {
+                gl.EnableVertexAttribArray(2 + i);
+                gl.VertexAttribPointer(2 + i, 4, VertexAttribPointerType.Float, false, 
+                    19 * sizeof(float), (void*)((i * 4) * sizeof(float)));
+                gl.VertexAttribDivisor(2 + i, 1);
+            }
+            
+            // Instance color (location 6)
+            gl.EnableVertexAttribArray(6);
+            gl.VertexAttribPointer(6, 3, VertexAttribPointerType.Float, false, 
+                19 * sizeof(float), (void*)(16 * sizeof(float)));
+            gl.VertexAttribDivisor(6, 1);
+        }
+        
+        // Set uniforms
+        unsafe
+        {
+            int viewLoc = gl.GetUniformLocation(instancedShaderProgram, "view");
+            int projLoc = gl.GetUniformLocation(instancedShaderProgram, "projection");
+            gl.UniformMatrix4(viewLoc, 1, false, (float*)&view);
+            gl.UniformMatrix4(projLoc, 1, false, (float*)&projection);
+        }
+        
+        // Draw all enemies in one call!
+        unsafe
+        {
+            gl.DrawElementsInstanced(PrimitiveType.Triangles, (uint)indices.Length, 
+                DrawElementsType.UnsignedInt, null, (uint)instanceCount);
+        }
+        
+        // Clean up divisors
+        for (uint i = 2; i <= 6; i++)
+        {
+            gl.VertexAttribDivisor(i, 0);
+            gl.DisableVertexAttribArray(i);
+        }
+    }
+    
+    private void RenderProjectilesInstanced(Matrix4x4 view, Matrix4x4 projection)
+    {
+        // Prepare instance data for all active projectiles
+        int instanceCount = 0;
         foreach (var projectile in projectiles)
         {
-            if (!projectile.IsActive) continue;
+            if (!projectile.IsActive || instanceCount >= MAX_PROJECTILES) continue;
             
-            Matrix4x4 projectileModel = 
+            // Build transformation matrix for this projectile
+            projectileInstanceData[instanceCount] = 
                 Matrix4x4.CreateScale(0.3f) *
                 Matrix4x4.CreateTranslation(projectile.Position);
             
-            // Enemy projectiles are orange, player projectiles are yellow
-            Vector3 projectileColor = projectile.IsEnemyProjectile ? 
+            // Set color (orange for enemy, yellow for player)
+            projectileInstanceColors[instanceCount] = projectile.IsEnemyProjectile ? 
                 new Vector3(1.0f, 0.5f, 0.0f) : new Vector3(1.0f, 1.0f, 0.0f);
-            
-            RenderCube(projectileModel, view, projection, projectileColor);
+            instanceCount++;
         }
+        
+        if (instanceCount == 0) return; // No projectiles to render
+        
+        // Update instance buffer with projectile data
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, projectileInstanceVBO);
+        unsafe
+        {
+            // Create combined data array (matrix + color for each instance)
+            float[] combinedData = new float[instanceCount * 19];
+            for (int i = 0; i < instanceCount; i++)
+            {
+                // Copy matrix (16 floats)
+                for (int j = 0; j < 16; j++)
+                {
+                    combinedData[i * 19 + j] = GetMatrixValue(projectileInstanceData[i], j);
+                }
+                // Copy color (3 floats)
+                combinedData[i * 19 + 16] = projectileInstanceColors[i].X;
+                combinedData[i * 19 + 17] = projectileInstanceColors[i].Y;
+                combinedData[i * 19 + 18] = projectileInstanceColors[i].Z;
+            }
+            
+            fixed (float* dataPtr = combinedData)
+            {
+                gl.BufferSubData(BufferTargetARB.ArrayBuffer, 0, 
+                    (nuint)(instanceCount * 19 * sizeof(float)), dataPtr);
+            }
+        }
+        
+        // Setup instanced rendering
+        gl.UseProgram(instancedShaderProgram);
+        gl.BindVertexArray(vao);
+        
+        // Setup instance attributes
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, projectileInstanceVBO);
+        
+        unsafe
+        {
+            // Instance matrix (locations 2,3,4,5)
+            for (uint i = 0; i < 4; i++)
+            {
+                gl.EnableVertexAttribArray(2 + i);
+                gl.VertexAttribPointer(2 + i, 4, VertexAttribPointerType.Float, false, 
+                    19 * sizeof(float), (void*)((i * 4) * sizeof(float)));
+                gl.VertexAttribDivisor(2 + i, 1);
+            }
+            
+            // Instance color (location 6)
+            gl.EnableVertexAttribArray(6);
+            gl.VertexAttribPointer(6, 3, VertexAttribPointerType.Float, false, 
+                19 * sizeof(float), (void*)(16 * sizeof(float)));
+            gl.VertexAttribDivisor(6, 1);
+        }
+        
+        // Set uniforms
+        unsafe
+        {
+            int viewLoc = gl.GetUniformLocation(instancedShaderProgram, "view");
+            int projLoc = gl.GetUniformLocation(instancedShaderProgram, "projection");
+            gl.UniformMatrix4(viewLoc, 1, false, (float*)&view);
+            gl.UniformMatrix4(projLoc, 1, false, (float*)&projection);
+        }
+        
+        // Draw all projectiles in one call!
+        unsafe
+        {
+            gl.DrawElementsInstanced(PrimitiveType.Triangles, (uint)indices.Length, 
+                DrawElementsType.UnsignedInt, null, (uint)instanceCount);
+        }
+        
+        // Clean up divisors
+        for (uint i = 2; i <= 6; i++)
+        {
+            gl.VertexAttribDivisor(i, 0);
+            gl.DisableVertexAttribArray(i);
+        }
+    }
+    
+    private float GetMatrixValue(Matrix4x4 matrix, int index)
+    {
+        // Helper to get matrix values by index (row-major order)
+        return index switch
+        {
+            0 => matrix.M11, 1 => matrix.M12, 2 => matrix.M13, 3 => matrix.M14,
+            4 => matrix.M21, 5 => matrix.M22, 6 => matrix.M23, 7 => matrix.M24,
+            8 => matrix.M31, 9 => matrix.M32, 10 => matrix.M33, 11 => matrix.M34,
+            12 => matrix.M41, 13 => matrix.M42, 14 => matrix.M43, 15 => matrix.M44,
+            _ => 0f
+        };
     }
     
     private void RenderCube(Matrix4x4 model, Matrix4x4 view, Matrix4x4 projection, Vector3? color = null)
@@ -801,39 +1071,6 @@ void main()
         }
     }
     
-    private void OnWeaponHit(RaycastHit hit)
-    {
-        
-        // Add visual hit marker with duration
-        hitMarkers.Add((hit.Point, HIT_MARKER_DURATION));
-        
-        // Mark the cube as destroyed
-        var targetIndex = Array.FindIndex(cubePositions, pos => Vector3.Distance(pos, hit.Target) < 0.1f);
-        if (targetIndex >= 0 && targetIndex < cubePositions.Length)
-        {
-            destroyedCubes.Add(targetIndex);
-            Console.WriteLine($"Destroyed cube {targetIndex}!");
-        }
-    }
-    
-    private void UpdateHitMarkers(float deltaTime)
-    {
-        // Update hit marker timers and remove expired ones
-        for (int i = hitMarkers.Count - 1; i >= 0; i--)
-        {
-            var (pos, timeRemaining) = hitMarkers[i];
-            timeRemaining -= deltaTime;
-            
-            if (timeRemaining <= 0)
-            {
-                hitMarkers.RemoveAt(i);
-            }
-            else
-            {
-                hitMarkers[i] = (pos, timeRemaining);
-            }
-        }
-    }
     
     // Hitstop methods removed - now handled per-enemy
     
@@ -842,7 +1079,8 @@ void main()
         currentWave = wave;
         waveTimer = 0f;
         
-        int enemiesToSpawn = 3 + (wave * 2); // Scale difficulty: 5, 7, 9, 11...
+        // Cap enemies to prevent memory issues
+        int enemiesToSpawn = Math.Min(3 + (wave * 2), 20); // Scale difficulty but cap at 20
         Console.WriteLine($"\n=== WAVE {wave} === Spawning {enemiesToSpawn} enemies!");
         
         Random rand = new Random();
@@ -899,6 +1137,9 @@ void main()
     {
         if (characterController == null || camera == null) return;
         
+        // Track dead enemies for removal
+        List<Enemy> deadEnemies = new List<Enemy>();
+        
         foreach (var enemy in enemies)
         {
             if (!enemy.IsActive) continue;
@@ -913,6 +1154,18 @@ void main()
                 // Only consume cooldown if projectile was actually fired
                 enemy.ConsumeAttackCooldown(gameTime);
             }
+            
+            // Mark dead enemies for removal
+            if (!enemy.IsAlive)
+            {
+                deadEnemies.Add(enemy);
+            }
+        }
+        
+        // Remove dead enemies from the list to free memory
+        foreach (var deadEnemy in deadEnemies)
+        {
+            enemies.Remove(deadEnemy);
         }
     }
     
