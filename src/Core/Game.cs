@@ -88,30 +88,36 @@ public class Game
     private uint vao, vbo, ebo;
     private uint shaderProgram;
     
+    // Camera and movement constants
+    private const float PLAYER_START_HEIGHT = 1.7f;
+    private const float PLAYER_START_Z = 5f;
+    
     // Camera and movement
     private Camera? camera;
     private CharacterController? characterController;
-    private Vector3 playerStartPosition = new Vector3(0, 1.7f, 5f);
+    private Vector3 playerStartPosition = new Vector3(0, PLAYER_START_HEIGHT, PLAYER_START_Z);
+    
+    // Combat constants
+    private const float HIT_MARKER_DURATION = 2.0f;
+    private const int MAX_PROJECTILES = 100;
+    private const float WAVE_DELAY = 5f;
+    private const float PLAYER_RADIUS = 0.5f;
     
     // Combat
     private Weapon? weapon;
     private List<(Vector3 position, float timeRemaining)> hitMarkers = new List<(Vector3, float)>();
-    private const float HIT_MARKER_DURATION = 2.0f; // Longer duration
     private HashSet<int> destroyedCubes = new HashSet<int>();
     
     // Enemies
     private List<Enemy> enemies = new List<Enemy>();
     private List<Projectile> projectiles = new List<Projectile>();
-    private const int MAX_PROJECTILES = 100;
-    private float gameTime = 0f;
+    private float gameTime = 0f; // Total game time for attack timing
     private int enemiesKilled = 0;
     private int currentWave = 0;
     private float waveTimer = 0f;
-    private const float WAVE_DELAY = 5f;
     
     // Player
     private PlayerHealth? playerHealth;
-    private const float PLAYER_RADIUS = 0.5f;
     
     // UI
     private Crosshair? crosshair;
@@ -182,13 +188,22 @@ public class Game
     
     public void Update(double deltaTime)
     {
+        // Poll input once per frame
+        inputSystem?.Poll();
+        
         accumulator += deltaTime;
+        
+        // Handle mouse look every frame (not in fixed timestep)
+        if (inputSystem != null && camera != null)
+        {
+            Vector2 mouseDelta = inputSystem.GetMouseDelta();
+            camera.UpdateRotation(mouseDelta);
+        }
         
         int updates = 0;
         while (accumulator >= FIXED_TIMESTEP && updates < MAX_UPDATES)
         {
             // Fixed update
-            inputSystem?.Poll();
             UpdateGameLogic(FIXED_TIMESTEP);
             
             accumulator -= FIXED_TIMESTEP;
@@ -220,12 +235,12 @@ public class Game
         if (inputSystem == null || camera == null || characterController == null || playerHealth == null) return;
         
         float dt = (float)fixedDeltaTime;
-        gameTime += dt;
+        gameTime += dt; // Track total time for enemy attack cooldowns
         
         // Update player health
         playerHealth.Update(dt);
         
-        // Check if player is dead
+        // Check if player is dead - block input but allow respawn
         if (!playerHealth.IsAlive)
         {
             // Respawn player after a delay
@@ -235,10 +250,6 @@ public class Game
             }
             return; // Don't process input when dead
         }
-        
-        // Handle mouse look
-        Vector2 mouseDelta = inputSystem.GetMouseDelta();
-        camera.UpdateRotation(mouseDelta);
         
         // Handle WASD movement input
         Vector3 moveInput = Vector3.Zero;
@@ -256,8 +267,8 @@ public class Game
         if (moveInput.LengthSquared() > 0)
             moveInput = Vector3.Normalize(moveInput);
         
-        // Handle jump input
-        bool jumpPressed = inputSystem.IsKeyJustPressed(Key.Space);
+        // Handle jump input (use IsKeyPressed for fixed timestep)
+        bool jumpPressed = inputSystem.IsKeyPressed(Key.Space);
         
         // Update character controller with physics
         characterController.Update(moveInput, jumpPressed, dt);
@@ -519,17 +530,17 @@ void main()
             RenderCube(hitModel, view, projection, new Vector3(1.0f, 0.2f, 0.2f));
         }
         
-        // Render enemies
+        // Render enemies as tall red cubes
         foreach (var enemy in enemies)
         {
             if (!enemy.IsActive) continue;
             
             Matrix4x4 enemyModel = 
-                Matrix4x4.CreateScale(1.5f, 2f, 1.5f) * // Taller than wide
-                Matrix4x4.CreateRotationY(enemy.GetYRotation()) *
+                Matrix4x4.CreateScale(1.5f, 2f, 1.5f) * // Taller than wide for visibility
+                Matrix4x4.CreateRotationY(enemy.GetYRotation()) * // Face player when attacking
                 Matrix4x4.CreateTranslation(enemy.Position);
             
-            RenderCube(enemyModel, view, projection, enemy.Color);
+            RenderCube(enemyModel, view, projection, enemy.Color); // Red normally, white when hit
         }
         
         // Render projectiles
@@ -622,15 +633,15 @@ void main()
         currentWave = wave;
         waveTimer = 0f;
         
-        int enemiesToSpawn = 3 + (wave * 2); // Increase enemies per wave
+        int enemiesToSpawn = 3 + (wave * 2); // Scale difficulty: 5, 7, 9, 11...
         Console.WriteLine($"\n=== WAVE {wave} === Spawning {enemiesToSpawn} enemies!");
         
         Random rand = new Random();
         for (int i = 0; i < enemiesToSpawn; i++)
         {
-            // Spawn enemies in a circle around the player
+            // Spawn enemies in a circle around the player at random distances
             float angle = (float)(rand.NextDouble() * Math.PI * 2);
-            float distance = 10f + (float)(rand.NextDouble() * 10f);
+            float distance = 10f + (float)(rand.NextDouble() * 10f); // 10-20 units away
             
             Vector3 spawnPos = new Vector3(
                 characterController!.Position.X + MathF.Sin(angle) * distance,
@@ -638,7 +649,7 @@ void main()
                 characterController.Position.Z + MathF.Cos(angle) * distance
             );
             
-            var enemy = new Enemy(spawnPos, 30f + (wave * 10f)); // More health each wave
+            var enemy = new Enemy(spawnPos, 30f + (wave * 10f)); // Health scales: 40, 50, 60...
             enemies.Add(enemy);
         }
     }
@@ -651,9 +662,10 @@ void main()
         {
             if (!enemy.IsActive) continue;
             
+            // Update AI state machine and movement
             enemy.Update(deltaTime, characterController.Position);
             
-            // Check if enemy can attack
+            // Check if enemy is ready to fire (in attack state + cooldown expired)
             if (enemy.CanAttack(gameTime))
             {
                 FireEnemyProjectile(enemy);
@@ -669,15 +681,15 @@ void main()
         {
             if (!projectile.IsActive) continue;
             
-            projectile.Update(deltaTime);
+            projectile.Update(deltaTime); // Move projectile and check lifetime
             
             if (projectile.IsEnemyProjectile)
             {
-                // Check collision with player
+                // Check collision with player hitbox
                 if (projectile.CheckCollision(characterController.Position, PLAYER_RADIUS))
                 {
                     playerHealth.TakeDamage(10f);
-                    projectile.Deactivate();
+                    projectile.Deactivate(); // Return to pool
                 }
             }
             else
@@ -708,13 +720,13 @@ void main()
     {
         if (weapon == null || camera == null || !weapon.CanFire()) return;
         
-        // Check hit on enemies first
+        // Prioritize hitting enemies over environment
         bool hitEnemy = false;
         foreach (var enemy in enemies)
         {
             if (!enemy.IsActive) continue;
             
-            // Simple ray-sphere intersection
+            // Ray-sphere intersection test for enemy hitbox
             Vector3 toEnemy = enemy.Position - camera.Position;
             float projLength = Vector3.Dot(toEnemy, camera.GetForwardVector());
             
@@ -723,10 +735,10 @@ void main()
                 Vector3 closestPoint = camera.Position + camera.GetForwardVector() * projLength;
                 float distance = Vector3.Distance(closestPoint, enemy.Position);
                 
-                if (distance <= 1.5f) // Enemy radius
+                if (distance <= 1.5f) // Enemy hitbox radius
                 {
                     enemy.TakeDamage(weapon.Damage);
-                    hitMarkers.Add((enemy.Position, HIT_MARKER_DURATION));
+                    hitMarkers.Add((enemy.Position, HIT_MARKER_DURATION)); // Visual feedback
                     
                     if (!enemy.IsAlive)
                     {
@@ -770,16 +782,18 @@ void main()
     
     private void CheckWaveCompletion()
     {
+        // Check if all enemies are dead
         if (enemies.Count == 0 || enemies.All(e => !e.IsAlive))
         {
             waveTimer += (float)FIXED_TIMESTEP;
             
+            // Wait for delay before spawning next wave
             if (waveTimer >= WAVE_DELAY && enemies.Count > 0)
             {
-                // Clear dead enemies
+                // Clear dead enemies from list
                 enemies.RemoveAll(e => !e.IsAlive);
                 
-                // Spawn next wave
+                // Spawn next wave with increased difficulty
                 SpawnWave(currentWave + 1);
             }
         }

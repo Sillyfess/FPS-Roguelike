@@ -2,13 +2,14 @@ using System.Numerics;
 
 namespace FPSRoguelike.Entities;
 
+// Enemy AI states for the state machine
 public enum EnemyState
 {
-    Idle,
-    Patrolling,
-    Chasing,
-    Attacking,
-    Dead
+    Idle,       // Standing still, checking for player
+    Patrolling, // Moving to random points
+    Chasing,    // Actively pursuing the player
+    Attacking,  // In range and firing projectiles
+    Dead        // Destroyed, awaiting cleanup
 }
 
 public class Enemy
@@ -22,16 +23,26 @@ public class Enemy
     public bool IsActive { get; set; } = true;
     public int Id { get; private set; }
     
-    // Movement parameters
-    private float moveSpeed = 3f;
-    private float chaseSpeed = 5f;
-    private float rotationSpeed = 3f;
+    // Movement constants
+    private const float DEFAULT_MOVE_SPEED = 3f;
+    private const float DEFAULT_CHASE_SPEED = 5f;
+    private const float DEFAULT_ROTATION_SPEED = 3f;
     
-    // Combat parameters
-    private float attackRange = 15f;
-    private float attackCooldown = 2f;
-    private float projectileSpeed = 20f;
-    private float damage = 10f;
+    // Combat constants
+    private const float DEFAULT_ATTACK_RANGE = 15f;
+    private const float DEFAULT_ATTACK_COOLDOWN = 2f;
+    private const float DEFAULT_PROJECTILE_SPEED = 20f;
+    private const float DEFAULT_DAMAGE = 10f;
+    
+    // Movement parameters
+    private float moveSpeed = DEFAULT_MOVE_SPEED;
+    private float chaseSpeed = DEFAULT_CHASE_SPEED;
+    
+    // Combat parameters  
+    private float attackRange = DEFAULT_ATTACK_RANGE;
+    private float attackCooldown = DEFAULT_ATTACK_COOLDOWN;
+    private float projectileSpeed = DEFAULT_PROJECTILE_SPEED;
+    private float damage = DEFAULT_DAMAGE;
     
     // AI State
     private EnemyState currentState = EnemyState.Idle;
@@ -41,15 +52,25 @@ public class Enemy
     private Vector3 patrolTarget;
     private float yRotation = 0f;
     
-    // Detection
-    private float detectionRange = 20f;
-    private float loseTargetRange = 30f;
-    private bool hasTarget = false;
+    // Detection constants
+    private const float DEFAULT_DETECTION_RANGE = 20f;
+    private const float DEFAULT_LOSE_TARGET_RANGE = 30f;
+    
+    // Detection parameters
+    private float detectionRange = DEFAULT_DETECTION_RANGE;
+    private float loseTargetRange = DEFAULT_LOSE_TARGET_RANGE;
     
     // Visual
     public Vector3 Color { get; private set; } = new Vector3(1.0f, 0.2f, 0.2f); // Red color
     private float hitFlashTimer = 0f;
     private const float HIT_FLASH_DURATION = 0.1f;
+    private const float GROUND_LEVEL = 1f;
+    private const float GRAVITY_STRENGTH = 20f;
+    private const float IDLE_TIMEOUT = 2f;
+    private const float PATROL_REACH_DISTANCE = 0.5f;
+    private const float MIN_PATROL_DISTANCE = 5f;
+    private const float MAX_PATROL_DISTANCE = 10f;
+    private const float EPSILON = 0.01f;
     
     private static int nextId = 0;
     
@@ -66,6 +87,7 @@ public class Enemy
     
     public void Update(float deltaTime, Vector3 playerPosition)
     {
+        // Dead enemies don't update
         if (!IsAlive)
         {
             currentState = EnemyState.Dead;
@@ -84,7 +106,7 @@ public class Enemy
         float distanceToPlayer = Vector3.Distance(Position, playerPosition);
         targetPosition = playerPosition;
         
-        // State machine logic
+        // Execute behavior based on current AI state
         switch (currentState)
         {
             case EnemyState.Idle:
@@ -105,13 +127,13 @@ public class Enemy
         }
         
         // Apply simple gravity if above ground
-        if (Position.Y > 1f)
+        if (Position.Y > GROUND_LEVEL + EPSILON)
         {
-            Velocity = new Vector3(Velocity.X, Velocity.Y - 20f * deltaTime, Velocity.Z);
+            Velocity = new Vector3(Velocity.X, Velocity.Y - GRAVITY_STRENGTH * deltaTime, Velocity.Z);
         }
-        else if (Position.Y < 1f)
+        else if (Position.Y < GROUND_LEVEL)
         {
-            Position = new Vector3(Position.X, 1f, Position.Z);
+            Position = new Vector3(Position.X, GROUND_LEVEL, Position.Z);
             Velocity = new Vector3(Velocity.X, 0, Velocity.Z);
         }
         
@@ -121,14 +143,15 @@ public class Enemy
     
     private void HandleIdleState(float distanceToPlayer)
     {
-        Velocity = Vector3.Zero;
+        Velocity = Vector3.Zero; // Stand still
         
+        // Player detected - start chasing
         if (distanceToPlayer <= detectionRange)
         {
             ChangeState(EnemyState.Chasing);
-            hasTarget = true;
         }
-        else if (stateTimer > 2f)
+        // Been idle too long - start patrolling
+        else if (stateTimer > IDLE_TIMEOUT)
         {
             ChangeState(EnemyState.Patrolling);
         }
@@ -139,7 +162,6 @@ public class Enemy
         if (distanceToPlayer <= detectionRange)
         {
             ChangeState(EnemyState.Chasing);
-            hasTarget = true;
             return;
         }
         
@@ -148,9 +170,10 @@ public class Enemy
         toTarget.Y = 0; // Keep on ground
         float distance = toTarget.Length();
         
-        if (distance > 0.5f)
+        if (distance > PATROL_REACH_DISTANCE)
         {
-            Vector3 direction = Vector3.Normalize(toTarget);
+            // Cache normalized direction to avoid redundant calculation
+            Vector3 direction = toTarget / distance; // More efficient than Normalize
             Velocity = direction * moveSpeed;
             
             // Rotate to face movement direction
@@ -166,13 +189,14 @@ public class Enemy
     
     private void HandleChasingState(float deltaTime, float distanceToPlayer)
     {
+        // Lost the player - go back to patrolling
         if (distanceToPlayer > loseTargetRange)
         {
-            hasTarget = false;
             ChangeState(EnemyState.Patrolling);
             return;
         }
         
+        // Close enough to attack
         if (distanceToPlayer <= attackRange)
         {
             ChangeState(EnemyState.Attacking);
@@ -183,9 +207,11 @@ public class Enemy
         Vector3 toPlayer = targetPosition - Position;
         toPlayer.Y = 0; // Keep on ground
         
-        if (toPlayer.LengthSquared() > 0)
+        float lengthSq = toPlayer.LengthSquared();
+        if (lengthSq > 0)
         {
-            Vector3 direction = Vector3.Normalize(toPlayer);
+            float length = MathF.Sqrt(lengthSq);
+            Vector3 direction = toPlayer / length; // More efficient than Normalize
             Velocity = direction * chaseSpeed;
             
             // Rotate to face player
@@ -205,7 +231,6 @@ public class Enemy
         
         if (distanceToPlayer > loseTargetRange)
         {
-            hasTarget = false;
             ChangeState(EnemyState.Patrolling);
             return;
         }
@@ -223,10 +248,12 @@ public class Enemy
     
     public bool CanAttack(float currentTime)
     {
+        // Must be in attack state
         if (currentState != EnemyState.Attacking) return false;
+        // Check if cooldown has expired
         if (currentTime - lastAttackTime < attackCooldown) return false;
         
-        lastAttackTime = currentTime;
+        lastAttackTime = currentTime; // Reset cooldown
         return true;
     }
     
@@ -244,13 +271,12 @@ public class Enemy
         if (!IsAlive) return;
         
         Health = Math.Max(0, Health - amount);
-        hitFlashTimer = HIT_FLASH_DURATION;
+        hitFlashTimer = HIT_FLASH_DURATION; // Trigger white flash
         
-        // Alert to player if not already chasing
+        // Getting hit alerts enemy to player location
         if (currentState == EnemyState.Idle || currentState == EnemyState.Patrolling)
         {
             ChangeState(EnemyState.Chasing);
-            hasTarget = true;
         }
         
         if (Health <= 0)
@@ -264,7 +290,7 @@ public class Enemy
         currentState = EnemyState.Dead;
         IsActive = false;
         Velocity = Vector3.Zero;
-        Console.WriteLine($"Enemy {Id} destroyed!");
+        // Enemy destroyed
     }
     
     private void ChangeState(EnemyState newState)
@@ -273,12 +299,18 @@ public class Enemy
         stateTimer = 0f;
     }
     
+    // Thread-safe random instance
+    private static readonly Random sharedRandom = new Random();
+    
     private void GenerateNewPatrolTarget()
     {
         // Generate random patrol point within range
-        Random rand = new Random();
-        float angle = (float)(rand.NextDouble() * Math.PI * 2);
-        float distance = 5f + (float)(rand.NextDouble() * 10f);
+        float angle, distance;
+        lock (sharedRandom)
+        {
+            angle = (float)(sharedRandom.NextDouble() * Math.PI * 2);
+            distance = MIN_PATROL_DISTANCE + (float)(sharedRandom.NextDouble() * MAX_PATROL_DISTANCE);
+        }
         
         patrolTarget = Position + new Vector3(
             MathF.Sin(angle) * distance,

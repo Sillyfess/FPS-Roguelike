@@ -4,10 +4,16 @@ namespace FPSRoguelike.Combat;
 
 public class Weapon
 {
+    // Weapon constants
+    private const float DEFAULT_DAMAGE = 10f;
+    private const float DEFAULT_FIRE_RATE = 0.2f;
+    private const float DEFAULT_RANGE = 100f;
+    private const float CUBE_HIT_RADIUS = 1f;
+    
     public string Name { get; set; } = "Basic Pistol";
-    public float Damage { get; set; } = 10f;
-    public float FireRate { get; set; } = 0.2f; // Time between shots in seconds
-    public float Range { get; set; } = 100f;
+    public float Damage { get; set; } = DEFAULT_DAMAGE;
+    public float FireRate { get; set; } = DEFAULT_FIRE_RATE; // Time between shots in seconds
+    public float Range { get; set; } = DEFAULT_RANGE;
     
     private float lastFireTime = 0f;
     private float currentTime = 0f;
@@ -17,7 +23,7 @@ public class Weapon
         return currentTime - lastFireTime >= FireRate;
     }
     
-    public void Fire(Vector3 origin, Vector3 direction, Action<RaycastHit> onHit, HashSet<int> destroyedTargets = null)
+    public void Fire(Vector3 origin, Vector3 direction, Action<RaycastHit> onHit, HashSet<int>? destroyedTargets = null)
     {
         if (!CanFire()) return;
         
@@ -31,7 +37,6 @@ public class Weapon
         }
         
         // Visual/audio feedback would go here
-        Console.WriteLine($"[{Name}] Fired! Direction: {direction:F2}");
     }
     
     public void Update(float deltaTime)
@@ -39,7 +44,7 @@ public class Weapon
         currentTime += deltaTime;
     }
     
-    private RaycastHit Raycast(Vector3 origin, Vector3 direction, float maxDistance, HashSet<int> destroyedTargets = null)
+    private RaycastHit Raycast(Vector3 origin, Vector3 direction, float maxDistance, HashSet<int>? destroyedTargets = null)
     {
         // For now, just check against some test targets
         // In a real implementation, this would check against all entities
@@ -67,7 +72,7 @@ public class Weapon
             var targetPos = testPositions[i];
             
             // Simple sphere collision check
-            float radius = 1f; // Cube "radius" for hit detection
+            float radius = CUBE_HIT_RADIUS; // Cube "radius" for hit detection
             
             // Ray-sphere intersection
             Vector3 toTarget = targetPos - origin;

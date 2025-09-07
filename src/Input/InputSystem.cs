@@ -4,21 +4,28 @@ using System.Numerics;
 
 namespace FPSRoguelike.Input;
 
-public class InputSystem
+// Handles all input from keyboard and mouse with raw input for FPS controls
+public class InputSystem : IDisposable
 {
     private IInputContext? inputContext;
     private IKeyboard? keyboard;
     private IMouse? mouse;
     
+    // Thread safety
+    private readonly object lockObject = new object();
+    
+    // Track current and previous states for "just pressed" detection
     private HashSet<Key> currentKeys = new();
     private HashSet<Key> previousKeys = new();
     private HashSet<MouseButton> currentMouseButtons = new();
     private HashSet<MouseButton> previousMouseButtons = new();
     
+    private bool disposed = false;
+    
     private Vector2 mouseDelta;
-    private Vector2 accumulatedMouseDelta; // Accumulate delta between polls
+    private Vector2 accumulatedMouseDelta;  // Accumulate between fixed timesteps
     private Vector2 lastMousePosition;
-    private bool firstMouseMove = true;
+    private bool firstMouseMove = true;  // Ignore first frame to prevent jump
     
     public void Initialize(IWindow window)
     {
@@ -43,13 +50,16 @@ public class InputSystem
     
     public void Poll()
     {
-        // Swap key states
-        previousKeys = new HashSet<Key>(currentKeys);
-        previousMouseButtons = new HashSet<MouseButton>(currentMouseButtons);
-        
-        // Transfer accumulated mouse delta to current frame
-        mouseDelta = accumulatedMouseDelta;
-        accumulatedMouseDelta = Vector2.Zero;
+        lock (lockObject)
+        {
+            // Swap key states for edge detection
+            previousKeys = new HashSet<Key>(currentKeys);
+            previousMouseButtons = new HashSet<MouseButton>(currentMouseButtons);
+            
+            // Transfer accumulated mouse movement to this frame
+            mouseDelta = accumulatedMouseDelta;
+            accumulatedMouseDelta = Vector2.Zero;  // Reset for next accumulation
+        }
     }
     
     // Keyboard input
@@ -64,7 +74,22 @@ public class InputSystem
     public bool IsMouseButtonJustReleased(MouseButton button) => 
         !currentMouseButtons.Contains(button) && previousMouseButtons.Contains(button);
     
-    public Vector2 GetMouseDelta() => mouseDelta;
+    public Vector2 GetMouseDelta() 
+    {
+        lock (lockObject)
+        {
+            // Return the mouse delta for this frame
+            return mouseDelta;
+        }
+    }
+    
+    public void ClearMouseDelta()
+    {
+        lock (lockObject)
+        {
+            accumulatedMouseDelta = Vector2.Zero;
+        }
+    }
     public Vector2 GetMousePosition() => lastMousePosition;
     
     // Input axis mapping
@@ -88,36 +113,94 @@ public class InputSystem
     // Event handlers
     private void OnKeyDown(IKeyboard keyboard, Key key, int scancode)
     {
-        currentKeys.Add(key);
+        try
+        {
+            lock (lockObject)
+            {
+                currentKeys.Add(key);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in OnKeyDown: {ex.Message}");
+        }
     }
     
     private void OnKeyUp(IKeyboard keyboard, Key key, int scancode)
     {
-        currentKeys.Remove(key);
+        try
+        {
+            lock (lockObject)
+            {
+                currentKeys.Remove(key);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in OnKeyUp: {ex.Message}");
+        }
     }
     
     private void OnMouseMove(IMouse mouse, Vector2 position)
     {
-        if (firstMouseMove)
+        try
         {
-            lastMousePosition = position;
-            firstMouseMove = false;
-            return;
+            lock (lockObject)
+            {
+                // Skip first frame to avoid jump from cursor lock
+                if (firstMouseMove)
+                {
+                    lastMousePosition = position;
+                    firstMouseMove = false;
+                    return;
+                }
+                
+                // Accumulate raw mouse movement between polls
+                var delta = position - lastMousePosition;
+                
+                // Clamp to prevent overflow with high DPI mice
+                const float MAX_DELTA = 1000f;
+                delta.X = Math.Clamp(delta.X, -MAX_DELTA, MAX_DELTA);
+                delta.Y = Math.Clamp(delta.Y, -MAX_DELTA, MAX_DELTA);
+                
+                accumulatedMouseDelta += delta;
+                lastMousePosition = position;
+            }
         }
-        
-        // Accumulate mouse delta until next poll
-        accumulatedMouseDelta += position - lastMousePosition;
-        lastMousePosition = position;
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in OnMouseMove: {ex.Message}");
+        }
     }
     
     private void OnMouseDown(IMouse mouse, MouseButton button)
     {
-        currentMouseButtons.Add(button);
+        try
+        {
+            lock (lockObject)
+            {
+                currentMouseButtons.Add(button);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in OnMouseDown: {ex.Message}");
+        }
     }
     
     private void OnMouseUp(IMouse mouse, MouseButton button)
     {
-        currentMouseButtons.Remove(button);
+        try
+        {
+            lock (lockObject)
+            {
+                currentMouseButtons.Remove(button);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in OnMouseUp: {ex.Message}");
+        }
     }
     
     private float scrollDelta = 0f;
@@ -130,20 +213,42 @@ public class InputSystem
     
     public void Cleanup()
     {
-        if (keyboard != null)
+        Dispose();
+    }
+    
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+    
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!disposed)
         {
-            keyboard.KeyDown -= OnKeyDown;
-            keyboard.KeyUp -= OnKeyUp;
+            if (disposing)
+            {
+                if (keyboard != null)
+                {
+                    keyboard.KeyDown -= OnKeyDown;
+                    keyboard.KeyUp -= OnKeyUp;
+                    keyboard = null;
+                }
+                
+                if (mouse != null)
+                {
+                    mouse.MouseMove -= OnMouseMove;
+                    mouse.MouseDown -= OnMouseDown;
+                    mouse.MouseUp -= OnMouseUp;
+                    mouse.Scroll -= OnMouseScroll;
+                    mouse = null;
+                }
+                
+                inputContext?.Dispose();
+                inputContext = null;
+            }
+            
+            disposed = true;
         }
-        
-        if (mouse != null)
-        {
-            mouse.MouseMove -= OnMouseMove;
-            mouse.MouseDown -= OnMouseDown;
-            mouse.MouseUp -= OnMouseUp;
-            mouse.Scroll -= OnMouseScroll;
-        }
-        
-        inputContext?.Dispose();
     }
 }

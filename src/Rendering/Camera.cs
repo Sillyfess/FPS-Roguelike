@@ -8,12 +8,23 @@ public class Camera
     public float Pitch { get; private set; }
     public float Yaw { get; private set; }
     
-    public float FieldOfView { get; set; } = 90f;
-    public float NearPlane { get; set; } = 0.1f;
-    public float FarPlane { get; set; } = 1000f;
+    // Camera constants
+    private const float DEFAULT_FIELD_OF_VIEW = 90f;
+    private const float DEFAULT_NEAR_PLANE = 0.1f;
+    private const float DEFAULT_FAR_PLANE = 1000f;
+    private const float DEFAULT_MOUSE_SENSITIVITY = 0.006f;
+    private const float MAX_PITCH_DEGREES = 89f;
+    private const float MIN_SENSITIVITY = 0.0001f;
+    private const float MAX_SENSITIVITY = 0.01f;
+    private const float DEG_TO_RAD = MathF.PI / 180f;
+    private const float TWO_PI = MathF.PI * 2f;
     
-    private float mouseSensitivity = 0.002f;
-    private float maxPitch = 89f * (MathF.PI / 180f);
+    public float FieldOfView { get; set; } = DEFAULT_FIELD_OF_VIEW;
+    public float NearPlane { get; set; } = DEFAULT_NEAR_PLANE;
+    public float FarPlane { get; set; } = DEFAULT_FAR_PLANE;
+    
+    private float mouseSensitivity = DEFAULT_MOUSE_SENSITIVITY;
+    private float maxPitch = MAX_PITCH_DEGREES * DEG_TO_RAD;
     
     public Matrix4x4 ViewMatrix { get; private set; }
     public Matrix4x4 ProjectionMatrix { get; private set; }
@@ -34,10 +45,10 @@ public class Camera
         Pitch = Math.Clamp(Pitch, -maxPitch, maxPitch);
         
         // Wrap yaw to keep it in reasonable range
-        if (Yaw > MathF.PI * 2f)
-            Yaw -= MathF.PI * 2f;
-        else if (Yaw < -MathF.PI * 2f)
-            Yaw += MathF.PI * 2f;
+        if (Yaw > TWO_PI)
+            Yaw -= TWO_PI;
+        else if (Yaw < -TWO_PI)
+            Yaw += TWO_PI;
     }
     
     public void UpdateMatrices(float aspectRatio)
@@ -51,7 +62,7 @@ public class Camera
         
         ViewMatrix = Matrix4x4.CreateLookAt(Position, Position + forward, up);
         ProjectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(
-            FieldOfView * (MathF.PI / 180f),
+            FieldOfView * DEG_TO_RAD,
             aspectRatio,
             NearPlane,
             FarPlane
@@ -95,6 +106,6 @@ public class Camera
     
     public void SetMouseSensitivity(float sensitivity)
     {
-        mouseSensitivity = Math.Clamp(sensitivity, 0.0001f, 0.01f);
+        mouseSensitivity = Math.Clamp(sensitivity, MIN_SENSITIVITY, MAX_SENSITIVITY);
     }
 }

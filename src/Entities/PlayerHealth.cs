@@ -1,23 +1,31 @@
 namespace FPSRoguelike.Entities;
 
+/// <summary>
+/// Manages player health, damage, and regeneration mechanics
+/// </summary>
 public class PlayerHealth
 {
     public float Health { get; private set; }
     public float MaxHealth { get; private set; }
     public bool IsAlive => Health > 0;
-    public float HealthPercentage => Health / MaxHealth;
+    public float HealthPercentage => MaxHealth > 0 ? Health / MaxHealth : 0f;  // For UI display
     
     // Damage and healing
     private float damageFlashTimer = 0f;
-    private const float DAMAGE_FLASH_DURATION = 0.2f;
+    private const float DAMAGE_FLASH_DURATION = 0.2f;  // Screen flash duration
     public bool IsDamageFlashing => damageFlashTimer > 0;
     
-    // Regeneration
-    private float regenDelay = 5f; // Time before regen starts after taking damage
-    private float regenRate = 5f; // Health per second
+    // Regeneration constants
+    private const float DEFAULT_REGEN_DELAY = 5f;
+    private const float DEFAULT_REGEN_RATE = 5f;
+    private const float DEFAULT_MAX_HEALTH = 100f;
+    
+    // Regeneration system
+    private float regenDelay = DEFAULT_REGEN_DELAY;
+    private float regenRate = DEFAULT_REGEN_RATE;
     private float timeSinceLastDamage = 0f;
     
-    public PlayerHealth(float maxHealth = 100f)
+    public PlayerHealth(float maxHealth = DEFAULT_MAX_HEALTH)
     {
         MaxHealth = maxHealth;
         Health = maxHealth;
@@ -25,7 +33,7 @@ public class PlayerHealth
     
     public void Update(float deltaTime)
     {
-        // Update timers
+        // Update damage flash effect
         if (damageFlashTimer > 0)
         {
             damageFlashTimer -= deltaTime;
@@ -33,7 +41,7 @@ public class PlayerHealth
         
         timeSinceLastDamage += deltaTime;
         
-        // Health regeneration after delay
+        // Start regenerating health after delay period
         if (IsAlive && Health < MaxHealth && timeSinceLastDamage >= regenDelay)
         {
             Health = Math.Min(MaxHealth, Health + regenRate * deltaTime);
@@ -42,17 +50,17 @@ public class PlayerHealth
     
     public void TakeDamage(float amount)
     {
-        if (!IsAlive) return;
+        if (!IsAlive) return;  // Can't damage dead player
         
         Health = Math.Max(0, Health - amount);
-        damageFlashTimer = DAMAGE_FLASH_DURATION;
-        timeSinceLastDamage = 0f;
+        damageFlashTimer = DAMAGE_FLASH_DURATION;  // Trigger visual feedback
+        timeSinceLastDamage = 0f;  // Reset regen timer
         
-        Console.WriteLine($"Player took {amount} damage! Health: {Health}/{MaxHealth}");
+        // Player took damage
         
         if (!IsAlive)
         {
-            Console.WriteLine("GAME OVER - Player died!");
+            // Player died - game over
         }
     }
     
@@ -61,7 +69,7 @@ public class PlayerHealth
         if (!IsAlive) return;
         
         Health = Math.Min(MaxHealth, Health + amount);
-        Console.WriteLine($"Player healed {amount}! Health: {Health}/{MaxHealth}");
+        // Player healed
     }
     
     public void Respawn()
@@ -69,6 +77,6 @@ public class PlayerHealth
         Health = MaxHealth;
         damageFlashTimer = 0f;
         timeSinceLastDamage = 0f;
-        Console.WriteLine("Player respawned!");
+        // Player respawned
     }
 }

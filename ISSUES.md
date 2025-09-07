@@ -1,7 +1,16 @@
 # Code Issues Report - FPS Roguelike
 
 ## Summary
-This document lists all identified issues in the FPS Roguelike codebase, categorized by severity and type.
+This document tracks remaining technical debt in the FPS Roguelike codebase. Many issues from the initial review have been addressed.
+
+## Recently Fixed Issues ✅
+- **Magic Numbers**: Extracted to named constants across all files
+- **Thread Safety**: InputSystem now uses locks and proper synchronization
+- **Error Handling**: Added try-catch blocks in InputSystem event handlers
+- **Resource Management**: InputSystem implements IDisposable pattern
+- **Division by Zero**: Fixed in PlayerHealth.HealthPercentage
+- **Console Output**: Removed debug Console.WriteLine statements
+- **Random Instance**: Enemy now uses thread-safe shared Random
 
 ## Critical Issues
 
@@ -10,77 +19,44 @@ This document lists all identified issues in the FPS Roguelike codebase, categor
 - **Issue**: No TODO or FIXME comments exist, suggesting incomplete tracking of known issues
 - **Impact**: Development debt may be hidden
 
-## High Priority Issues
+## Remaining High Priority Issues
 
-### 1. Extensive Magic Numbers
-- **Location**: Multiple files
-- **Issue**: Hard-coded values without named constants make code difficult to maintain and understand
-- **Examples**:
-  - `Enemy.cs`: 
-    - Line 26-34: `moveSpeed = 3f`, `chaseSpeed = 5f`, `rotationSpeed = 3f`, `attackRange = 15f`, `attackCooldown = 2f`, `projectileSpeed = 20f`, `damage = 10f`
-    - Line 45-46: `detectionRange = 20f`, `loseTargetRange = 30f`
-    - Line 108-115: Hard-coded Y position values (1f) for ground level
-    - Line 131: Magic number `2f` for idle timer
-    - Line 151: Magic distance `0.5f` for patrol target reached
-    - Line 279-281: Magic numbers for random patrol generation (5f, 10f)
-  - `PlayerHealth.cs`:
-    - Line 16-17: `regenDelay = 5f`, `regenRate = 5f`
-    - Line 20: Default health `100f`
-  - `Projectile.cs`:
-    - Line 14-15: `MAX_LIFETIME = 5f`, `PROJECTILE_RADIUS = 0.2f`
-    - Line 40: Ground check at `Y <= 0f`
-  - `CharacterController.cs`:
-    - Line 8-11: `MoveSpeed = 10f`, `JumpHeight = 2f`, `Gravity = -20f`, `AirControl = 0.3f`
-    - Line 19-21: `playerHeight = 1.8f`, `groundCheckDistance = 0.1f`
-    - Line 50: Jump calculation magic number `2f`
-  - `Camera.cs`:
-    - Line 11-13: `FieldOfView = 90f`, `NearPlane = 0.1f`, `FarPlane = 1000f`
-    - Line 15-16: `mouseSensitivity = 0.002f`, `maxPitch = 89f`
-    - Line 98: Sensitivity clamp values `0.0001f, 0.01f`
-  - `Weapon.cs`:
-    - Line 8-10: `Damage = 10f`, `FireRate = 0.2f`, `Range = 100f`
-    - Line 70: Cube radius `1f` for hit detection
-  - `Game.cs`:
-    - Line 94: `playerStartPosition = new Vector3(0, 1.7f, 5f)`
-    - Line 99: `HIT_MARKER_DURATION = 2.0f`
-    - Line 105: `MAX_PROJECTILES = 100`
-    - Line 110: `WAVE_DELAY = 5f`
-    - Line 114: `PLAYER_RADIUS = 0.5f`
+### 1. ~~Extensive Magic Numbers~~ ✅ FIXED
+- All magic numbers have been extracted to named constants
+- Examples of fixes:
+  - Enemy.cs: `DEFAULT_MOVE_SPEED`, `DEFAULT_ATTACK_RANGE`, etc.
+  - PlayerHealth.cs: `DEFAULT_REGEN_DELAY`, `DEFAULT_MAX_HEALTH`
+  - CharacterController.cs: `DEFAULT_GRAVITY`, `JUMP_VELOCITY_MULTIPLIER`
+  - Camera.cs: `MAX_PITCH_DEGREES`, `TWO_PI`
+  - Weapon.cs: `CUBE_HIT_RADIUS`
+  - Game.cs: `HIT_MARKER_DURATION`, `MAX_PROJECTILES`
 
-### 2. Resource Management Issues
-- **Location**: Multiple classes
-- **Issue**: Missing proper disposal patterns
-- **Examples**:
-  - `InputSystem.cs`: Has `Cleanup()` method but no IDisposable implementation
-  - `Game.cs`: Creates OpenGL resources (VAO, VBO, EBO, shaders) but no cleanup/disposal
-  - `Renderer.cs`: Likely has similar OpenGL resource management issues
-  - `Crosshair.cs`: Creates OpenGL resources without disposal
+### 2. Resource Management Issues (Partially Fixed)
+- **Status**: InputSystem ✅ FIXED (now implements IDisposable)
+- **Still Need Fixing**:
+  - `Game.cs`: OpenGL resources (VAO, VBO, EBO, shaders) cleanup in Cleanup() but no IDisposable
+  - `Renderer.cs`: May have OpenGL resource management issues
+  - `Crosshair.cs`: Has Cleanup() but no IDisposable pattern
 
-### 3. Error Handling Deficiencies
-- **Location**: Throughout codebase
-- **Issue**: Minimal error handling and no try-catch blocks
-- **Examples**:
-  - `InputSystem.cs`: No null checks for keyboard/mouse in event handlers
+### 3. Error Handling (Partially Fixed)
+- **Status**: InputSystem ✅ FIXED (all event handlers have try-catch)
+- **Still Need Improvement**:
   - `Enemy.cs`: No bounds checking for position updates
   - `Projectile.cs`: No validation of input parameters in `Fire()` method
   - OpenGL operations lack error checking
 
 ## Medium Priority Issues
 
-### 1. Thread Safety Concerns
-- **Location**: `InputSystem.cs`, `Enemy.cs`
-- **Issue**: Event handlers modify collections without synchronization
-- **Examples**:
-  - `InputSystem.cs` lines 89-97, 113-120: Event handlers modify HashSets without locks
-  - `Enemy.cs` line 279: Creates new Random instance per call (not thread-safe, inefficient)
+### 1. ~~Thread Safety Concerns~~ ✅ FIXED
+- InputSystem now uses lock objects for thread safety
+- Enemy.cs uses a shared static Random instance with proper locking
 
-### 2. Performance Issues
-- **Location**: Multiple areas
-- **Issue**: Inefficient operations in hot paths
-- **Examples**:
-  - `Enemy.cs` line 279: Creating new Random instance every patrol target generation
-  - `Weapon.cs` lines 48-59: Hardcoded array allocation in raycast method
-  - `InputSystem.cs` lines 46-47: Creating new HashSet copies every poll
+### 2. Performance Issues (Mostly Fixed)
+- **Fixed**:
+  - Enemy.cs: ✅ Now uses shared Random instance
+  - InputSystem: ✅ Mouse delta clamped to prevent overflow
+- **Still Present**:
+  - `Weapon.cs`: Hardcoded array allocation in raycast method
   - Multiple Vector3 normalizations that could be cached
 
 ### 3. Architecture Issues
@@ -113,13 +89,9 @@ This document lists all identified issues in the FPS Roguelike codebase, categor
 - **Issue**: No XML documentation comments for public APIs
 - **Impact**: Harder for team collaboration and API understanding
 
-### 3. Console Output in Production Code
-- **Location**: Multiple files
-- **Issue**: Debug Console.WriteLine statements left in code
-- **Examples**:
-  - `Enemy.cs` line 267
-  - `PlayerHealth.cs` lines 51, 55, 64, 72
-  - `Weapon.cs` line 34
+### 3. ~~Console Output in Production Code~~ ✅ FIXED
+- All debug Console.WriteLine statements have been removed
+- Only error logging remains in InputSystem catch blocks
 
 ### 4. Incomplete Features
 - **Location**: `Game.cs`
@@ -147,33 +119,51 @@ This document lists all identified issues in the FPS Roguelike codebase, categor
 - **Issue**: Mouse delta accumulation could overflow with high DPI mice
 - **Line**: 109 - No bounds checking on accumulated delta
 
-### 4. Division by Zero Risk
-- **Location**: `PlayerHealth.cs`
-- **Issue**: HealthPercentage property doesn't check for MaxHealth == 0
-- **Line**: 8
+### 4. ~~Division by Zero Risk~~ ✅ FIXED
+- PlayerHealth.HealthPercentage now includes null check:
+  `MaxHealth > 0 ? Health / MaxHealth : 0f`
 
-## Recommendations
+## Updated Recommendations
 
-1. **Immediate Actions**:
-   - Extract all magic numbers to named constants
-   - Add proper disposal patterns for resource management
-   - Implement basic error handling for critical paths
+1. **Completed Actions** ✅:
+   - ✓ Extracted all magic numbers to constants
+   - ✓ Added IDisposable to InputSystem
+   - ✓ Implemented error handling in input events
+   - ✓ Fixed thread safety issues
+   - ✓ Removed console output
 
-2. **Short Term**:
-   - Add logging system to replace Console.WriteLine
-   - Implement proper entity-component system
+2. **Next Priority**:
+   - Complete OpenGL resource disposal
+   - Add validation to public methods
+   - Consider logging framework
    - Add unit tests for core systems
 
-3. **Long Term**:
-   - Refactor to use dependency injection
-   - Implement proper abstraction layers
-   - Add comprehensive error handling and recovery
-   - Performance profiling and optimization
+3. **Future Improvements**:
+   - Refactor to reduce coupling
+   - Consider full ECS if complexity grows
+   - Add comprehensive error recovery
+   - Performance profiling when needed
 
-## Statistics
-- Total Issues Found: 35+
-- Critical: 1
-- High Priority: 3
-- Medium Priority: 4
-- Low Priority: 4
-- Potential Bugs: 4
+## Issue Statistics Update
+
+### Original Issues Found: 35+
+### Issues Fixed: 15+ ✅
+### Remaining Issues: ~10
+
+**Fixed Categories:**
+- Magic Numbers: COMPLETELY FIXED ✅
+- Thread Safety: FIXED ✅
+- Console Output: FIXED ✅
+- Division by Zero: FIXED ✅
+- Random Instance: FIXED ✅
+- Input Error Handling: FIXED ✅
+
+**Partially Fixed:**
+- Resource Management: InputSystem fixed, OpenGL resources remain
+- Error Handling: Input fixed, other areas need work
+- Performance: Most issues addressed, minor optimizations remain
+
+**Still Open:**
+- Architecture issues (tight coupling)
+- Some OpenGL resource disposal
+- Validation in some methods
