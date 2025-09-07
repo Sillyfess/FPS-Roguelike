@@ -114,7 +114,7 @@ public class Game : IDisposable
     private Vector3 playerStartPosition = new Vector3(0, PLAYER_START_HEIGHT, PLAYER_START_Z);
     
     // Combat constants
-    private const int MAX_PROJECTILES = 100;
+    private const int MAX_PROJECTILES = 500;
     private const float WAVE_DELAY = 5f;
     private const float PLAYER_RADIUS = 0.5f;
     
@@ -1079,8 +1079,9 @@ void main()
         currentWave = wave;
         waveTimer = 0f;
         
-        // Cap enemies to prevent memory issues
-        int enemiesToSpawn = Math.Min(3 + (wave * 2), 20); // Scale difficulty but cap at 20
+        // Exponential enemy scaling: 5, 7, 10, 15, 22, 33, 50...
+        int enemiesToSpawn = (int)(5 * Math.Pow(1.5, wave - 1));
+        enemiesToSpawn = Math.Min(enemiesToSpawn, 100); // Cap at 100 to prevent total chaos
         Console.WriteLine($"\n=== WAVE {wave} === Spawning {enemiesToSpawn} enemies!");
         
         Random rand = new Random();
@@ -1123,7 +1124,9 @@ void main()
             // Only spawn if we found a valid position
             if (validSpawn)
             {
-                var enemy = new Enemy(spawnPos, 30f + (wave * 10f)); // Health scales: 40, 50, 60...
+                // Exponential health scaling: 30, 45, 67, 101, 151...
+                float enemyHealth = 30f * MathF.Pow(1.5f, wave - 1);
+                var enemy = new Enemy(spawnPos, enemyHealth);
                 enemies.Add(enemy);
             }
             else
