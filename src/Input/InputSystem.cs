@@ -16,6 +16,7 @@ public class InputSystem
     private HashSet<MouseButton> previousMouseButtons = new();
     
     private Vector2 mouseDelta;
+    private Vector2 accumulatedMouseDelta; // Accumulate delta between polls
     private Vector2 lastMousePosition;
     private bool firstMouseMove = true;
     
@@ -46,8 +47,9 @@ public class InputSystem
         previousKeys = new HashSet<Key>(currentKeys);
         previousMouseButtons = new HashSet<MouseButton>(currentMouseButtons);
         
-        // Reset per-frame values
-        mouseDelta = Vector2.Zero;
+        // Transfer accumulated mouse delta to current frame
+        mouseDelta = accumulatedMouseDelta;
+        accumulatedMouseDelta = Vector2.Zero;
     }
     
     // Keyboard input
@@ -103,7 +105,8 @@ public class InputSystem
             return;
         }
         
-        mouseDelta = position - lastMousePosition;
+        // Accumulate mouse delta until next poll
+        accumulatedMouseDelta += position - lastMousePosition;
         lastMousePosition = position;
     }
     
