@@ -12,7 +12,7 @@ public class CharacterController
     
     // State
     public Vector3 Position { get; set; }
-    public Vector3 Velocity { get; private set; }
+    public Vector3 Velocity { get; set; }
     public bool IsGrounded { get; private set; }
     
     // Collision parameters

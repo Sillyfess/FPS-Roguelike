@@ -7,6 +7,7 @@ using FPSRoguelike.Input;
 using FPSRoguelike.Rendering;
 using FPSRoguelike.Physics;
 using FPSRoguelike.Combat;
+using FPSRoguelike.Entities;
 
 namespace FPSRoguelike.Core;
 
@@ -98,6 +99,20 @@ public class Game
     private const float HIT_MARKER_DURATION = 2.0f; // Longer duration
     private HashSet<int> destroyedCubes = new HashSet<int>();
     
+    // Enemies
+    private List<Enemy> enemies = new List<Enemy>();
+    private List<Projectile> projectiles = new List<Projectile>();
+    private const int MAX_PROJECTILES = 100;
+    private float gameTime = 0f;
+    private int enemiesKilled = 0;
+    private int currentWave = 0;
+    private float waveTimer = 0f;
+    private const float WAVE_DELAY = 5f;
+    
+    // Player
+    private PlayerHealth? playerHealth;
+    private const float PLAYER_RADIUS = 0.5f;
+    
     // UI
     private Crosshair? crosshair;
     
@@ -133,6 +148,18 @@ public class Game
         // Initialize crosshair
         crosshair = new Crosshair(gl);
         
+        // Initialize player health
+        playerHealth = new PlayerHealth(100f);
+        
+        // Initialize projectile pool
+        for (int i = 0; i < MAX_PROJECTILES; i++)
+        {
+            projectiles.Add(new Projectile());
+        }
+        
+        // Spawn initial enemies for testing
+        SpawnWave(1);
+        
         // Lock cursor for FPS
         var input = window.CreateInput();
         if (input.Mice.Count > 0)
@@ -148,7 +175,9 @@ public class Game
         Console.WriteLine("  Space - Jump");
         Console.WriteLine("  Left Mouse - Shoot");
         Console.WriteLine("  F1 - Debug info");
+        Console.WriteLine("  F2 - Spawn more enemies");
         Console.WriteLine("  ESC - Exit");
+        Console.WriteLine("\nObjective: Survive and destroy all enemies!");
     }
     
     public void Update(double deltaTime)
@@ -188,9 +217,24 @@ public class Game
     
     private void UpdateGameLogic(double fixedDeltaTime)
     {
-        if (inputSystem == null || camera == null || characterController == null) return;
+        if (inputSystem == null || camera == null || characterController == null || playerHealth == null) return;
         
         float dt = (float)fixedDeltaTime;
+        gameTime += dt;
+        
+        // Update player health
+        playerHealth.Update(dt);
+        
+        // Check if player is dead
+        if (!playerHealth.IsAlive)
+        {
+            // Respawn player after a delay
+            if (inputSystem.IsKeyJustPressed(Key.R))
+            {
+                RespawnPlayer();
+            }
+            return; // Don't process input when dead
+        }
         
         // Handle mouse look
         Vector2 mouseDelta = inputSystem.GetMouseDelta();
@@ -227,16 +271,20 @@ public class Game
         // Handle shooting
         if (inputSystem.IsMouseButtonPressed(MouseButton.Left))
         {
-            weapon?.Fire(
-                camera.Position,
-                camera.GetForwardVector(),
-                hit => OnWeaponHit(hit),
-                destroyedCubes
-            );
+            FireWeapon();
         }
+        
+        // Update enemies
+        UpdateEnemies(dt);
+        
+        // Update projectiles
+        UpdateProjectiles(dt);
         
         // Update hit markers
         UpdateHitMarkers(dt);
+        
+        // Check for wave completion
+        CheckWaveCompletion();
         
         // Update cube rotation for visual interest
         rotation += dt * 50.0f;
@@ -247,6 +295,15 @@ public class Game
             Console.WriteLine($"Position: {characterController.Position:F2}");
             Console.WriteLine($"Velocity: {characterController.Velocity:F2}");
             Console.WriteLine($"Grounded: {characterController.IsGrounded}");
+            Console.WriteLine($"Health: {playerHealth.Health}/{playerHealth.MaxHealth}");
+            Console.WriteLine($"Enemies: {enemies.Count(e => e.IsAlive)} | Killed: {enemiesKilled}");
+            Console.WriteLine($"Wave: {currentWave}");
+        }
+        
+        // Spawn enemies manually for testing
+        if (inputSystem.IsKeyJustPressed(Key.F2))
+        {
+            SpawnWave(currentWave + 1);
         }
     }
     
@@ -461,6 +518,35 @@ void main()
             // Render in red
             RenderCube(hitModel, view, projection, new Vector3(1.0f, 0.2f, 0.2f));
         }
+        
+        // Render enemies
+        foreach (var enemy in enemies)
+        {
+            if (!enemy.IsActive) continue;
+            
+            Matrix4x4 enemyModel = 
+                Matrix4x4.CreateScale(1.5f, 2f, 1.5f) * // Taller than wide
+                Matrix4x4.CreateRotationY(enemy.GetYRotation()) *
+                Matrix4x4.CreateTranslation(enemy.Position);
+            
+            RenderCube(enemyModel, view, projection, enemy.Color);
+        }
+        
+        // Render projectiles
+        foreach (var projectile in projectiles)
+        {
+            if (!projectile.IsActive) continue;
+            
+            Matrix4x4 projectileModel = 
+                Matrix4x4.CreateScale(0.3f) *
+                Matrix4x4.CreateTranslation(projectile.Position);
+            
+            // Enemy projectiles are orange, player projectiles are yellow
+            Vector3 projectileColor = projectile.IsEnemyProjectile ? 
+                new Vector3(1.0f, 0.5f, 0.0f) : new Vector3(1.0f, 1.0f, 0.0f);
+            
+            RenderCube(projectileModel, view, projection, projectileColor);
+        }
     }
     
     private void RenderCube(Matrix4x4 model, Matrix4x4 view, Matrix4x4 projection, Vector3? color = null)
@@ -529,5 +615,190 @@ void main()
                 hitMarkers[i] = (pos, timeRemaining);
             }
         }
+    }
+    
+    private void SpawnWave(int wave)
+    {
+        currentWave = wave;
+        waveTimer = 0f;
+        
+        int enemiesToSpawn = 3 + (wave * 2); // Increase enemies per wave
+        Console.WriteLine($"\n=== WAVE {wave} === Spawning {enemiesToSpawn} enemies!");
+        
+        Random rand = new Random();
+        for (int i = 0; i < enemiesToSpawn; i++)
+        {
+            // Spawn enemies in a circle around the player
+            float angle = (float)(rand.NextDouble() * Math.PI * 2);
+            float distance = 10f + (float)(rand.NextDouble() * 10f);
+            
+            Vector3 spawnPos = new Vector3(
+                characterController!.Position.X + MathF.Sin(angle) * distance,
+                1f,
+                characterController.Position.Z + MathF.Cos(angle) * distance
+            );
+            
+            var enemy = new Enemy(spawnPos, 30f + (wave * 10f)); // More health each wave
+            enemies.Add(enemy);
+        }
+    }
+    
+    private void UpdateEnemies(float deltaTime)
+    {
+        if (characterController == null || camera == null) return;
+        
+        foreach (var enemy in enemies)
+        {
+            if (!enemy.IsActive) continue;
+            
+            enemy.Update(deltaTime, characterController.Position);
+            
+            // Check if enemy can attack
+            if (enemy.CanAttack(gameTime))
+            {
+                FireEnemyProjectile(enemy);
+            }
+        }
+    }
+    
+    private void UpdateProjectiles(float deltaTime)
+    {
+        if (characterController == null || playerHealth == null) return;
+        
+        foreach (var projectile in projectiles)
+        {
+            if (!projectile.IsActive) continue;
+            
+            projectile.Update(deltaTime);
+            
+            if (projectile.IsEnemyProjectile)
+            {
+                // Check collision with player
+                if (projectile.CheckCollision(characterController.Position, PLAYER_RADIUS))
+                {
+                    playerHealth.TakeDamage(10f);
+                    projectile.Deactivate();
+                }
+            }
+            else
+            {
+                // Check collision with enemies
+                foreach (var enemy in enemies)
+                {
+                    if (!enemy.IsActive) continue;
+                    
+                    if (projectile.CheckCollision(enemy.Position, 1f))
+                    {
+                        enemy.TakeDamage(weapon?.Damage ?? 10f);
+                        projectile.Deactivate();
+                        
+                        if (!enemy.IsAlive)
+                        {
+                            enemiesKilled++;
+                            Console.WriteLine($"Enemy destroyed! Total kills: {enemiesKilled}");
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    private void FireWeapon()
+    {
+        if (weapon == null || camera == null || !weapon.CanFire()) return;
+        
+        // Check hit on enemies first
+        bool hitEnemy = false;
+        foreach (var enemy in enemies)
+        {
+            if (!enemy.IsActive) continue;
+            
+            // Simple ray-sphere intersection
+            Vector3 toEnemy = enemy.Position - camera.Position;
+            float projLength = Vector3.Dot(toEnemy, camera.GetForwardVector());
+            
+            if (projLength > 0 && projLength < weapon.Range)
+            {
+                Vector3 closestPoint = camera.Position + camera.GetForwardVector() * projLength;
+                float distance = Vector3.Distance(closestPoint, enemy.Position);
+                
+                if (distance <= 1.5f) // Enemy radius
+                {
+                    enemy.TakeDamage(weapon.Damage);
+                    hitMarkers.Add((enemy.Position, HIT_MARKER_DURATION));
+                    
+                    if (!enemy.IsAlive)
+                    {
+                        enemiesKilled++;
+                        Console.WriteLine($"Enemy destroyed! Total kills: {enemiesKilled}");
+                    }
+                    
+                    hitEnemy = true;
+                    break;
+                }
+            }
+        }
+        
+        // If no enemy hit, check cubes
+        if (!hitEnemy)
+        {
+            weapon.Fire(
+                camera.Position,
+                camera.GetForwardVector(),
+                hit => OnWeaponHit(hit),
+                destroyedCubes
+            );
+        }
+        
+        Console.WriteLine($"[{weapon.Name}] Fired!");
+    }
+    
+    private void FireEnemyProjectile(Enemy enemy)
+    {
+        // Find an inactive projectile to use
+        var projectile = projectiles.FirstOrDefault(p => !p.IsActive);
+        if (projectile != null)
+        {
+            Vector3 origin = enemy.Position + new Vector3(0, 0.5f, 0); // Shoot from middle of enemy
+            Vector3 direction = enemy.GetAttackDirection();
+            
+            projectile.Fire(origin, direction, enemy.GetProjectileSpeed(), enemy.GetDamage(), true);
+            Console.WriteLine($"Enemy {enemy.Id} fired projectile!");
+        }
+    }
+    
+    private void CheckWaveCompletion()
+    {
+        if (enemies.Count == 0 || enemies.All(e => !e.IsAlive))
+        {
+            waveTimer += (float)FIXED_TIMESTEP;
+            
+            if (waveTimer >= WAVE_DELAY && enemies.Count > 0)
+            {
+                // Clear dead enemies
+                enemies.RemoveAll(e => !e.IsAlive);
+                
+                // Spawn next wave
+                SpawnWave(currentWave + 1);
+            }
+        }
+    }
+    
+    private void RespawnPlayer()
+    {
+        if (characterController == null || playerHealth == null) return;
+        
+        characterController.Position = playerStartPosition;
+        characterController.Velocity = Vector3.Zero;
+        playerHealth.Respawn();
+        
+        // Clear all projectiles
+        foreach (var projectile in projectiles)
+        {
+            projectile.Deactivate();
+        }
+        
+        Console.WriteLine("Player respawned! Press R to respawn when dead.");
     }
 }
