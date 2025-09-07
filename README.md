@@ -39,7 +39,7 @@ dotnet run --project FPSRoguelike.csproj
 | **Respawn** | R (when dead) |
 | **Debug Info** | F1 |
 | **Spawn Enemies** | F2 |
-| **Exit** | ESC |
+| **Settings Menu** | ESC |
 
 ## 🏗️ Architecture
 
@@ -57,7 +57,9 @@ src/
 ├── Entities/      # Enemy AI, player health
 ├── Physics/       # Character controller
 ├── Combat/        # Weapons and projectiles
-└── Rendering/     # Camera, renderer, UI
+├── Rendering/     # Camera, renderer, crosshair
+├── UI/            # HUD, settings menu (SimpleUIManager)
+└── Environment/   # Obstacles and level elements
 ```
 
 ## ✅ Current Features
@@ -71,10 +73,11 @@ src/
 
 ### Combat System
 - Raycast-based pistol weapon
-- Enemy projectile attacks
+- Enemy projectile attacks with object pooling (100 pre-allocated)
 - Health and damage systems
-- Visual hit feedback (hit markers, damage flash)
-- Destructible environment targets
+- Visual hit feedback (hit markers, damage flash, screenshake)
+- Game feel enhancements (hitstop on enemy hits)
+- Environmental obstacles
 
 ### Enemy AI
 - State machine behavior (Idle, Patrol, Chase, Attack)
@@ -85,9 +88,11 @@ src/
 
 ### Wave System
 - Progressive difficulty
-- Enemy count scales with waves
+- Enemy count scales with waves (3 + wave number)
+- Enemy health scales with waves (100 + 50 per wave)
 - 5-second delay between waves
 - Automatic spawning on completion
+- Score tracking (100 points per enemy, 150 bonus per wave)
 
 ## 🛠️ Technical Stack
 
@@ -109,15 +114,18 @@ src/
 ### Next Priority
 - [ ] Additional weapons (shotgun, machine gun, rocket launcher)
 - [ ] Movement abilities (dash, double jump)
-- [ ] Score and UI overlay
-- [ ] Sound effects
+- [x] Score and UI overlay (HUD implemented)
+- [x] Settings menu with adjustable FOV, sensitivity, volume
+- [ ] Sound effects (volume sliders ready, audio system needed)
 
 ### Future Plans
 - [ ] Roguelike item system
 - [ ] Boss enemies
 - [ ] Arena variety
-- [ ] Visual effects (particles, screen shake)
+- [x] Visual effects (screenshake implemented, particles pending)
 - [ ] Multiplayer support
+- [ ] Settings persistence (save/load preferences)
+- [ ] Key rebinding system
 
 ## 📚 Documentation
 

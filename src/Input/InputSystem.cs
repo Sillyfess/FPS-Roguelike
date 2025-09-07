@@ -52,13 +52,19 @@ public class InputSystem : IDisposable
     {
         lock (lockObject)
         {
-            // Swap key states for edge detection
-            previousKeys = new HashSet<Key>(currentKeys);
-            previousMouseButtons = new HashSet<MouseButton>(currentMouseButtons);
+            // Swap key states for edge detection - reuse collections to avoid allocations
+            previousKeys.Clear();
+            previousKeys.UnionWith(currentKeys);
+            
+            previousMouseButtons.Clear();
+            previousMouseButtons.UnionWith(currentMouseButtons);
             
             // Transfer accumulated mouse movement to this frame
             mouseDelta = accumulatedMouseDelta;
             accumulatedMouseDelta = Vector2.Zero;  // Reset for next accumulation
+            
+            // Reset scroll delta after reading (it doesn't accumulate like mouse movement)
+            scrollDelta = 0f;
         }
     }
     
@@ -208,7 +214,10 @@ public class InputSystem : IDisposable
     
     private void OnMouseScroll(IMouse mouse, ScrollWheel wheel)
     {
-        scrollDelta = wheel.Y;
+        lock (lockObject)
+        {
+            scrollDelta = wheel.Y;
+        }
     }
     
     public void Cleanup()

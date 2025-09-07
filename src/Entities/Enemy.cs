@@ -1,4 +1,5 @@
 using System.Numerics;
+using FPSRoguelike.Environment;
 
 namespace FPSRoguelike.Entities;
 
@@ -64,6 +65,12 @@ public class Enemy
     public Vector3 Color { get; private set; } = new Vector3(1.0f, 0.2f, 0.2f); // Red color
     private float hitFlashTimer = 0f;
     private const float HIT_FLASH_DURATION = 0.1f;
+    
+    // Hitstop - individual enemy freezing on hit
+    private float hitstopTimer = 0f;
+    private const float HITSTOP_DURATION = 0.05f; // 50ms freeze
+    private const float HITSTOP_TIME_SCALE = 0.1f; // 10% speed during hitstop
+    public bool IsInHitstop => hitstopTimer > 0f;
     private const float GROUND_LEVEL = 1f;
     private const float GRAVITY_STRENGTH = 20f;
     private const float IDLE_TIMEOUT = 2f;
@@ -76,7 +83,20 @@ public class Enemy
     
     public Enemy(Vector3 startPosition, float health = 30f)
     {
-        Id = nextId++;
+        // Validate parameters
+        if (float.IsNaN(startPosition.X) || float.IsNaN(startPosition.Y) || float.IsNaN(startPosition.Z) ||
+            float.IsInfinity(startPosition.X) || float.IsInfinity(startPosition.Y) || float.IsInfinity(startPosition.Z))
+        {
+            throw new ArgumentException("Start position contains invalid values", nameof(startPosition));
+        }
+        
+        if (health <= 0 || float.IsNaN(health) || float.IsInfinity(health))
+        {
+            throw new ArgumentException("Health must be positive and finite", nameof(health));
+        }
+        
+        // Use thread-safe atomic increment for ID generation
+        Id = System.Threading.Interlocked.Increment(ref nextId);
         Position = startPosition;
         MaxHealth = health;
         Health = health;
@@ -85,7 +105,7 @@ public class Enemy
         GenerateNewPatrolTarget();
     }
     
-    public void Update(float deltaTime, Vector3 playerPosition)
+    public void Update(float deltaTime, Vector3 playerPosition, List<Obstacle> obstacles = null)
     {
         // Dead enemies don't update
         if (!IsAlive)
@@ -94,11 +114,21 @@ public class Enemy
             return;
         }
         
-        // Update timers
-        stateTimer += deltaTime;
+        // Update hitstop timer first (always at normal speed)
+        if (hitstopTimer > 0)
+        {
+            hitstopTimer -= deltaTime;
+            if (hitstopTimer < 0) hitstopTimer = 0;
+        }
+        
+        // Apply time scale during hitstop for this enemy only
+        float scaledDeltaTime = IsInHitstop ? deltaTime * HITSTOP_TIME_SCALE : deltaTime;
+        
+        // Update timers with scaled time
+        stateTimer += scaledDeltaTime;
         if (hitFlashTimer > 0)
         {
-            hitFlashTimer -= deltaTime;
+            hitFlashTimer -= deltaTime; // Visual flash uses real time
             Color = hitFlashTimer > 0 ? new Vector3(1.0f, 1.0f, 1.0f) : new Vector3(1.0f, 0.2f, 0.2f);
         }
         
@@ -106,39 +136,103 @@ public class Enemy
         float distanceToPlayer = Vector3.Distance(Position, playerPosition);
         targetPosition = playerPosition;
         
-        // Execute behavior based on current AI state
-        switch (currentState)
+        // Execute behavior based on current AI state (only if not in hitstop)
+        if (!IsInHitstop)
         {
-            case EnemyState.Idle:
-                HandleIdleState(distanceToPlayer);
-                break;
-                
-            case EnemyState.Patrolling:
-                HandlePatrollingState(deltaTime, distanceToPlayer);
-                break;
-                
-            case EnemyState.Chasing:
-                HandleChasingState(deltaTime, distanceToPlayer);
-                break;
-                
-            case EnemyState.Attacking:
-                HandleAttackingState(deltaTime, distanceToPlayer);
-                break;
+            switch (currentState)
+            {
+                case EnemyState.Idle:
+                    HandleIdleState(distanceToPlayer);
+                    break;
+                    
+                case EnemyState.Patrolling:
+                    HandlePatrollingState(scaledDeltaTime, distanceToPlayer);
+                    break;
+                    
+                case EnemyState.Chasing:
+                    HandleChasingState(scaledDeltaTime, distanceToPlayer);
+                    break;
+                    
+                case EnemyState.Attacking:
+                    HandleAttackingState(scaledDeltaTime, distanceToPlayer);
+                    break;
+            }
+        }
+        else
+        {
+            // During hitstop, enemy is frozen - no state updates
+            Velocity = Vector3.Zero;
         }
         
-        // Apply simple gravity if above ground
-        if (Position.Y > GROUND_LEVEL + EPSILON)
+        // Apply simple gravity and velocity (only if not in hitstop)
+        if (!IsInHitstop)
         {
-            Velocity = new Vector3(Velocity.X, Velocity.Y - GRAVITY_STRENGTH * deltaTime, Velocity.Z);
+            if (Position.Y > GROUND_LEVEL + EPSILON)
+            {
+                Velocity = new Vector3(Velocity.X, Velocity.Y - GRAVITY_STRENGTH * scaledDeltaTime, Velocity.Z);
+            }
+            else if (Position.Y < GROUND_LEVEL)
+            {
+                Position = new Vector3(Position.X, GROUND_LEVEL, Position.Z);
+                Velocity = new Vector3(Velocity.X, 0, Velocity.Z);
+            }
+            
+            // Apply velocity with collision detection
+            Vector3 newPosition = Position + Velocity * scaledDeltaTime;
+            
+            // Check collision with obstacles
+            if (obstacles != null && Velocity.LengthSquared() > 0)
+            {
+                const float ENEMY_RADIUS = 0.75f;
+                bool collisionDetected = false;
+                
+                foreach (var obstacle in obstacles)
+                {
+                    if (obstacle.IsDestroyed) continue;
+                    
+                    // Check if new position would collide with obstacle
+                    if (obstacle.CheckCollision(new Vector3(newPosition.X, Position.Y, newPosition.Z), ENEMY_RADIUS))
+                    {
+                        collisionDetected = true;
+                        
+                        // Try sliding along the obstacle
+                        // First try moving only on X axis
+                        Vector3 xOnly = new Vector3(Position.X + Velocity.X * scaledDeltaTime, Position.Y, Position.Z);
+                        if (!obstacle.CheckCollision(xOnly, ENEMY_RADIUS))
+                        {
+                            Position = xOnly;
+                        }
+                        // Try moving only on Z axis
+                        else
+                        {
+                            Vector3 zOnly = new Vector3(Position.X, Position.Y, Position.Z + Velocity.Z * scaledDeltaTime);
+                            if (!obstacle.CheckCollision(zOnly, ENEMY_RADIUS))
+                            {
+                                Position = zOnly;
+                            }
+                            else
+                            {
+                                // Can't move at all, generate new patrol target if patrolling
+                                if (currentState == EnemyState.Patrolling)
+                                {
+                                    GenerateNewPatrolTarget();
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+                
+                if (!collisionDetected)
+                {
+                    Position = newPosition;
+                }
+            }
+            else
+            {
+                Position += Velocity * scaledDeltaTime;
+            }
         }
-        else if (Position.Y < GROUND_LEVEL)
-        {
-            Position = new Vector3(Position.X, GROUND_LEVEL, Position.Z);
-            Velocity = new Vector3(Velocity.X, 0, Velocity.Z);
-        }
-        
-        // Apply velocity
-        Position += Velocity * deltaTime;
     }
     
     private void HandleIdleState(float distanceToPlayer)
@@ -253,8 +347,13 @@ public class Enemy
         // Check if cooldown has expired
         if (currentTime - lastAttackTime < attackCooldown) return false;
         
-        lastAttackTime = currentTime; // Reset cooldown
+        // Don't reset cooldown here - only reset when attack actually fires
         return true;
+    }
+    
+    public void ConsumeAttackCooldown(float currentTime)
+    {
+        lastAttackTime = currentTime; // Reset cooldown when attack is actually fired
     }
     
     public Vector3 GetAttackDirection()
@@ -272,6 +371,7 @@ public class Enemy
         
         Health = Math.Max(0, Health - amount);
         hitFlashTimer = HIT_FLASH_DURATION; // Trigger white flash
+        hitstopTimer = HITSTOP_DURATION; // Trigger hitstop for this enemy only
         
         // Getting hit alerts enemy to player location
         if (currentState == EnemyState.Idle || currentState == EnemyState.Patrolling)
@@ -299,18 +399,14 @@ public class Enemy
         stateTimer = 0f;
     }
     
-    // Thread-safe random instance
-    private static readonly Random sharedRandom = new Random();
+    // Per-instance random to avoid lock contention
+    private readonly Random random = new Random(Guid.NewGuid().GetHashCode());
     
     private void GenerateNewPatrolTarget()
     {
         // Generate random patrol point within range
-        float angle, distance;
-        lock (sharedRandom)
-        {
-            angle = (float)(sharedRandom.NextDouble() * Math.PI * 2);
-            distance = MIN_PATROL_DISTANCE + (float)(sharedRandom.NextDouble() * MAX_PATROL_DISTANCE);
-        }
+        float angle = (float)(random.NextDouble() * Math.PI * 2);
+        float distance = MIN_PATROL_DISTANCE + (float)(random.NextDouble() * MAX_PATROL_DISTANCE);
         
         patrolTarget = Position + new Vector3(
             MathF.Sin(angle) * distance,

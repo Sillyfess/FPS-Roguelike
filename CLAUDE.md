@@ -16,7 +16,9 @@ src/
 ├── Entities/      # Enemy.cs, PlayerHealth.cs
 ├── Physics/       # CharacterController.cs
 ├── Combat/        # Weapon.cs, Projectile.cs
-└── Rendering/     # Camera.cs, Renderer.cs, Crosshair.cs
+├── Rendering/     # Camera.cs, Renderer.cs, Crosshair.cs
+├── UI/            # HUD.cs, SimpleUIManager.cs - Settings menu and UI
+└── Environment/   # Obstacle.cs - Environmental obstacles
 ```
 
 ## Key Architecture
@@ -42,8 +44,11 @@ See CODE_STANDARDS.md for complete guidelines.
 - **Space**: Jump
 - **LMB**: Shoot
 - **R**: Respawn when dead
-- **F1**: Debug info
-- **ESC**: Exit
+- **F1**: Toggle debug info
+- **F2**: Spawn enemies (debug)
+- **ESC**: Toggle settings menu
+- **Arrow Keys/WASD**: Navigate settings menu
+- **Enter/Space**: Select menu item
 
 ## Important Files
 - **README.md**: Project overview

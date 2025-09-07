@@ -9,10 +9,11 @@ using FPSRoguelike.Physics;
 using FPSRoguelike.Combat;
 using FPSRoguelike.Entities;
 using FPSRoguelike.UI;
+using FPSRoguelike.Environment;
 
 namespace FPSRoguelike.Core;
 
-public class Game
+public class Game : IDisposable
 {
     private IWindow window;
     private GL gl;
@@ -24,15 +25,9 @@ public class Game
     // Timing
     private double accumulator = 0.0;
     private const double FIXED_TIMESTEP = 1.0 / 60.0;
-    private const int MAX_UPDATES = 5;
+    private const int MAX_UPDATES = 10; // Increased to prevent spiral of death
     
-    // Hitstop constants
-    private const float HITSTOP_DURATION = 0.05f; // Brief 50ms pause
-    private const float HITSTOP_TIME_SCALE = 0.1f; // 10% speed for impact feel
-    
-    // Hitstop state
-    private float hitstopTime = 0f;
-    private bool isInHitstop = false;
+    // Removed global hitstop - now handled per-enemy
     
     // Test cube vertices - need 24 vertices (4 per face) for proper normals
     private readonly float[] vertices = 
@@ -101,7 +96,7 @@ public class Game
     
     // Camera and movement constants
     private const float PLAYER_START_HEIGHT = 1.7f;
-    private const float PLAYER_START_Z = 5f;
+    private const float PLAYER_START_Z = -10f;
     
     // Camera and movement
     private Camera? camera;
@@ -122,6 +117,7 @@ public class Game
     // Enemies
     private List<Enemy> enemies = new List<Enemy>();
     private List<Projectile> projectiles = new List<Projectile>();
+    private List<Obstacle> obstacles = new List<Obstacle>();
     private float gameTime = 0f; // Total game time for attack timing
     private int enemiesKilled = 0;
     private int currentWave = 0;
@@ -166,6 +162,9 @@ public class Game
         
         // Initialize weapon
         weapon = new Weapon();
+        
+        // Create initial obstacles for the level
+        GenerateObstacles();
         
         // Initialize crosshair
         crosshair = new Crosshair(gl);
@@ -311,8 +310,8 @@ public class Game
         
         accumulator += deltaTime;
         
-        // Handle mouse look every frame (not in fixed timestep) - but disable during hitstop
-        if (inputSystem != null && camera != null && !isInHitstop)
+        // Handle mouse look every frame (not in fixed timestep)
+        if (inputSystem != null && camera != null)
         {
             Vector2 mouseDelta = inputSystem.GetMouseDelta();
             
@@ -322,6 +321,8 @@ public class Game
             
             camera.UpdateRotation(mouseDelta);
         }
+        
+        // Removed respawn check from here - now only handled in fixed timestep to prevent double-triggering
         
         int updates = 0;
         while (accumulator >= FIXED_TIMESTEP && updates < MAX_UPDATES)
@@ -363,13 +364,7 @@ public class Game
         
         float dt = (float)fixedDeltaTime;
         
-        // Update hitstop timer (always at normal speed)
-        UpdateHitstop(dt);
-        
-        // Apply time scale during hitstop
-        float scaledDt = isInHitstop ? dt * HITSTOP_TIME_SCALE : dt;
-        
-        gameTime += scaledDt; // Track total time for enemy attack cooldowns
+        gameTime += dt; // Track total time for enemy attack cooldowns
         
         // Update player health
         playerHealth.Update(dt);
@@ -377,7 +372,7 @@ public class Game
         // Check if player is dead - block input but allow respawn
         if (!playerHealth.IsAlive)
         {
-            // Respawn player after a delay
+            // Respawn player - only check here in fixed timestep to prevent double-triggering
             if (inputSystem.IsKeyJustPressed(Key.R))
             {
                 RespawnPlayer();
@@ -404,35 +399,35 @@ public class Game
         // Handle jump input (use IsKeyPressed for fixed timestep)
         bool jumpPressed = inputSystem.IsKeyPressed(Key.Space);
         
-        // Update character controller with physics (apply hitstop to movement too)
-        characterController.Update(moveInput, jumpPressed, scaledDt);
+        // Update character controller with physics and collision
+        characterController.Update(moveInput, jumpPressed, dt, obstacles);
         
         // Update camera position to follow player (with eye height offset)
         camera.Position = characterController.Position;
         
         // Update weapon (use scaled time)
-        weapon?.Update(scaledDt);
+        weapon?.Update(dt);
         
-        // Handle shooting (disable during hitstop)
-        if (inputSystem.IsMouseButtonPressed(MouseButton.Left) && !isInHitstop)
+        // Handle shooting
+        if (inputSystem.IsMouseButtonPressed(MouseButton.Left))
         {
             FireWeapon();
         }
         
-        // Update enemies (use scaled time)
-        UpdateEnemies(scaledDt);
+        // Update enemies (use normal time - enemies handle their own hitstop)
+        UpdateEnemies(dt);
         
-        // Update projectiles (use scaled time)
-        UpdateProjectiles(scaledDt);
+        // Update projectiles (use normal time)
+        UpdateProjectiles(dt);
         
-        // Update hit markers (use scaled time)
-        UpdateHitMarkers(scaledDt);
+        // Update hit markers (use normal time)
+        UpdateHitMarkers(dt);
         
         // Check for wave completion
-        CheckWaveCompletion();
+        CheckWaveCompletion(dt);
         
-        // Update cube rotation for visual interest (use scaled time)
-        rotation += scaledDt * 50.0f;
+        // Update cube rotation for visual interest (use normal time)
+        rotation += dt * 50.0f;
         
         // Debug output
         if (inputSystem.IsKeyJustPressed(Key.F1))
@@ -563,11 +558,12 @@ void main()
         gl.ShaderSource(vertexShader, vertexShaderSource);
         gl.CompileShader(vertexShader);
         
-        // Check compilation
-        string infoLog = gl.GetShaderInfoLog(vertexShader);
-        if (!string.IsNullOrWhiteSpace(infoLog))
+        // Check vertex shader compilation
+        gl.GetShader(vertexShader, ShaderParameterName.CompileStatus, out int vertexSuccess);
+        if (vertexSuccess == 0)
         {
-            Console.WriteLine($"Vertex shader compilation: {infoLog}");
+            string infoLog = gl.GetShaderInfoLog(vertexShader);
+            throw new Exception($"Vertex shader compilation failed: {infoLog}");
         }
         
         // Compile fragment shader
@@ -575,10 +571,12 @@ void main()
         gl.ShaderSource(fragmentShader, fragmentShaderSource);
         gl.CompileShader(fragmentShader);
         
-        infoLog = gl.GetShaderInfoLog(fragmentShader);
-        if (!string.IsNullOrWhiteSpace(infoLog))
+        // Check fragment shader compilation
+        gl.GetShader(fragmentShader, ShaderParameterName.CompileStatus, out int fragmentSuccess);
+        if (fragmentSuccess == 0)
         {
-            Console.WriteLine($"Fragment shader compilation: {infoLog}");
+            string infoLog = gl.GetShaderInfoLog(fragmentShader);
+            throw new Exception($"Fragment shader compilation failed: {infoLog}");
         }
         
         // Link shaders
@@ -587,10 +585,12 @@ void main()
         gl.AttachShader(shaderProgram, fragmentShader);
         gl.LinkProgram(shaderProgram);
         
-        infoLog = gl.GetProgramInfoLog(shaderProgram);
-        if (!string.IsNullOrWhiteSpace(infoLog))
+        // Check shader program linking
+        gl.GetProgram(shaderProgram, ProgramPropertyARB.LinkStatus, out int linkSuccess);
+        if (linkSuccess == 0)
         {
-            Console.WriteLine($"Shader linking: {infoLog}");
+            string infoLog = gl.GetProgramInfoLog(shaderProgram);
+            throw new Exception($"Shader linking failed: {infoLog}");
         }
         
         // Clean up
@@ -614,7 +614,6 @@ void main()
         new Vector3(0, 2, -10),
     };
     
-    private double lastRenderTime = 0;
     
     private void RenderTestCube(double interpolation, double renderDeltaTime)
     {
@@ -624,7 +623,7 @@ void main()
         gl.BindVertexArray(vao);
         
         // Update camera matrices with FOV from UI settings
-        float aspectRatio = (float)window.Size.X / window.Size.Y;
+        float aspectRatio = window.Size.Y > 0 ? (float)window.Size.X / window.Size.Y : 16.0f / 9.0f;
         float fov = uiManager?.FieldOfView ?? 90f;
         camera.UpdateScreenshake((float)renderDeltaTime);
         camera.UpdateMatrices(aspectRatio, fov);
@@ -666,6 +665,17 @@ void main()
                 Matrix4x4.CreateTranslation(hitPos);
             // Render in red
             RenderCube(hitModel, view, projection, new Vector3(1.0f, 0.2f, 0.2f));
+        }
+        
+        // Render obstacles
+        foreach (var obstacle in obstacles)
+        {
+            if (obstacle.IsDestroyed) continue;
+            
+            Matrix4x4 obstacleModel = Matrix4x4.CreateScale(obstacle.Size) *
+                                      Matrix4x4.CreateRotationY(obstacle.Rotation) *
+                                      Matrix4x4.CreateTranslation(obstacle.Position);
+            RenderCube(obstacleModel, view, projection, obstacle.Color);
         }
         
         // Render enemies as tall red cubes
@@ -720,20 +730,79 @@ void main()
         }
     }
     
+    private bool disposed = false;
+    
     public void Cleanup()
     {
-        crosshair?.Cleanup();
-        gl.DeleteVertexArray(vao);
-        gl.DeleteBuffer(vbo);
-        gl.DeleteBuffer(ebo);
-        gl.DeleteProgram(shaderProgram);
-        
-        Console.WriteLine("Game cleaned up!");
+        Dispose();
+    }
+    
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+    
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!disposed)
+        {
+            if (disposing)
+            {
+                // Dispose managed resources
+                inputSystem?.Dispose();
+                renderer?.Cleanup();
+                crosshair?.Cleanup();
+                hud?.Cleanup();
+            }
+            
+            // Clean up unmanaged resources (OpenGL)
+            if (gl != null)
+            {
+                // Clean up each resource individually to prevent one failure from blocking others
+                try
+                {
+                    gl.DeleteVertexArray(vao);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Error deleting VAO: {ex.Message}");
+                }
+                
+                try
+                {
+                    gl.DeleteBuffer(vbo);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Error deleting VBO: {ex.Message}");
+                }
+                
+                try
+                {
+                    gl.DeleteBuffer(ebo);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Error deleting EBO: {ex.Message}");
+                }
+                
+                try
+                {
+                    gl.DeleteProgram(shaderProgram);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Error deleting shader program: {ex.Message}");
+                }
+            }
+            
+            disposed = true;
+        }
     }
     
     private void OnWeaponHit(RaycastHit hit)
     {
-        Console.WriteLine($"HIT! Target at {hit.Target:F2}, Distance: {hit.Distance:F1}");
         
         // Add visual hit marker with duration
         hitMarkers.Add((hit.Point, HIT_MARKER_DURATION));
@@ -766,24 +835,7 @@ void main()
         }
     }
     
-    private void TriggerHitstop()
-    {
-        hitstopTime = HITSTOP_DURATION;
-        isInHitstop = true;
-    }
-    
-    private void UpdateHitstop(float deltaTime)
-    {
-        if (hitstopTime > 0)
-        {
-            hitstopTime -= deltaTime;
-            if (hitstopTime <= 0)
-            {
-                hitstopTime = 0;
-                isInHitstop = false;
-            }
-        }
-    }
+    // Hitstop methods removed - now handled per-enemy
     
     private void SpawnWave(int wave)
     {
@@ -794,20 +846,52 @@ void main()
         Console.WriteLine($"\n=== WAVE {wave} === Spawning {enemiesToSpawn} enemies!");
         
         Random rand = new Random();
+        const float ENEMY_SPAWN_RADIUS = 0.75f;
+        const int MAX_SPAWN_ATTEMPTS = 50;
+        
         for (int i = 0; i < enemiesToSpawn; i++)
         {
-            // Spawn enemies in a circle around the player at random distances
-            float angle = (float)(rand.NextDouble() * Math.PI * 2);
-            float distance = 10f + (float)(rand.NextDouble() * 10f); // 10-20 units away
+            bool validSpawn = false;
+            int attempts = 0;
+            Vector3 spawnPos = Vector3.Zero;
             
-            Vector3 spawnPos = new Vector3(
-                characterController!.Position.X + MathF.Sin(angle) * distance,
-                1f,
-                characterController.Position.Z + MathF.Cos(angle) * distance
-            );
+            // Try to find a valid spawn position not inside obstacles
+            while (!validSpawn && attempts < MAX_SPAWN_ATTEMPTS)
+            {
+                // Spawn enemies in a circle around the player at random distances
+                float angle = (float)(rand.NextDouble() * Math.PI * 2);
+                float distance = 15f + (float)(rand.NextDouble() * 15f); // 15-30 units away
+                
+                spawnPos = new Vector3(
+                    characterController!.Position.X + MathF.Sin(angle) * distance,
+                    1f,
+                    characterController.Position.Z + MathF.Cos(angle) * distance
+                );
+                
+                // Check if spawn position collides with any obstacle
+                validSpawn = true;
+                foreach (var obstacle in obstacles)
+                {
+                    if (obstacle.CheckCollision(spawnPos, ENEMY_SPAWN_RADIUS))
+                    {
+                        validSpawn = false;
+                        break;
+                    }
+                }
+                
+                attempts++;
+            }
             
-            var enemy = new Enemy(spawnPos, 30f + (wave * 10f)); // Health scales: 40, 50, 60...
-            enemies.Add(enemy);
+            // Only spawn if we found a valid position
+            if (validSpawn)
+            {
+                var enemy = new Enemy(spawnPos, 30f + (wave * 10f)); // Health scales: 40, 50, 60...
+                enemies.Add(enemy);
+            }
+            else
+            {
+                Console.WriteLine($"Warning: Could not find valid spawn position for enemy {i + 1}");
+            }
         }
     }
     
@@ -820,12 +904,14 @@ void main()
             if (!enemy.IsActive) continue;
             
             // Update AI state machine and movement
-            enemy.Update(deltaTime, characterController.Position);
+            enemy.Update(deltaTime, characterController.Position, obstacles);
             
             // Check if enemy is ready to fire (in attack state + cooldown expired)
             if (enemy.CanAttack(gameTime))
             {
                 FireEnemyProjectile(enemy);
+                // Only consume cooldown if projectile was actually fired
+                enemy.ConsumeAttackCooldown(gameTime);
             }
         }
     }
@@ -839,6 +925,30 @@ void main()
             if (!projectile.IsActive) continue;
             
             projectile.Update(deltaTime); // Move projectile and check lifetime
+            
+            // Check collision with obstacles
+            bool hitObstacle = false;
+            foreach (var obstacle in obstacles)
+            {
+                if (obstacle.IsDestroyed) continue;
+                
+                // Check if projectile hits obstacle
+                if (obstacle.CheckCollision(projectile.Position, 0.2f))
+                {
+                    // Damage destructible obstacles
+                    if (obstacle.IsDestructible)
+                    {
+                        obstacle.TakeDamage(projectile.Damage);
+                    }
+                    
+                    // Deactivate projectile on impact
+                    projectile.Deactivate();
+                    hitObstacle = true;
+                    break;
+                }
+            }
+            
+            if (hitObstacle) continue;
             
             if (projectile.IsEnemyProjectile)
             {
@@ -861,8 +971,7 @@ void main()
                         enemy.TakeDamage(weapon?.Damage ?? 10f);
                         projectile.Deactivate();
                         
-                        // Trigger hitstop on enemy hit
-                        TriggerHitstop();
+                        // Hitstop now handled per-enemy in TakeDamage
                         
                         if (!enemy.IsAlive)
                         {
@@ -892,6 +1001,11 @@ void main()
             Vector3 direction = camera.GetForwardVector();
             projectile.Fire(origin, direction, 50f, weapon.Damage, fromEnemy: false);
         }
+        else
+        {
+            // Projectile pool exhausted - provide feedback
+            Console.WriteLine("[WARNING] Projectile pool exhausted! Cannot fire.");
+        }
         
         Console.WriteLine($"[{weapon.Name}] Fired!");
     }
@@ -908,20 +1022,28 @@ void main()
             projectile.Fire(origin, direction, enemy.GetProjectileSpeed(), enemy.GetDamage(), true);
             Console.WriteLine($"Enemy {enemy.Id} fired projectile!");
         }
+        else
+        {
+            // Pool exhausted - enemy can't fire
+            Console.WriteLine($"Enemy {enemy.Id} couldn't fire - projectile pool exhausted!");
+        }
     }
     
-    private void CheckWaveCompletion()
+    private void CheckWaveCompletion(float deltaTime)
     {
         // Check if all enemies are dead
         if (enemies.Count == 0 || enemies.All(e => !e.IsAlive))
         {
-            waveTimer += (float)FIXED_TIMESTEP;
+            waveTimer += deltaTime;
             
             // Wait for delay before spawning next wave
-            if (waveTimer >= WAVE_DELAY && enemies.Count > 0)
+            if (waveTimer >= WAVE_DELAY)
             {
-                // Clear dead enemies from list
-                enemies.RemoveAll(e => !e.IsAlive);
+                // Clear dead enemies from list if any remain
+                if (enemies.Count > 0)
+                {
+                    enemies.RemoveAll(e => !e.IsAlive);
+                }
                 
                 // Spawn next wave with increased difficulty
                 SpawnWave(currentWave + 1);
@@ -944,5 +1066,36 @@ void main()
         }
         
         Console.WriteLine("Player respawned! Press R to respawn when dead.");
+    }
+    
+    private void GenerateObstacles()
+    {
+        obstacles.Clear();
+        
+        // Create a variety of obstacles around the level
+        
+        // Some crates for cover
+        obstacles.Add(new Obstacle(new Vector3(10f, 1f, 10f), ObstacleType.Crate));
+        obstacles.Add(new Obstacle(new Vector3(-8f, 1f, 15f), ObstacleType.Crate));
+        obstacles.Add(new Obstacle(new Vector3(5f, 1f, -12f), ObstacleType.Crate));
+        
+        // Wall segments for tactical positioning
+        obstacles.Add(new Obstacle(new Vector3(15f, 3f, 0f), ObstacleType.Wall, MathF.PI / 4));
+        obstacles.Add(new Obstacle(new Vector3(-15f, 3f, 8f), ObstacleType.Wall, -MathF.PI / 3));
+        obstacles.Add(new Obstacle(new Vector3(0f, 3f, -20f), ObstacleType.Wall, MathF.PI / 2));
+        
+        // Pillars for visual variety and cover
+        obstacles.Add(new Obstacle(new Vector3(8f, 4f, -8f), ObstacleType.Pillar));
+        obstacles.Add(new Obstacle(new Vector3(-10f, 4f, -10f), ObstacleType.Pillar));
+        obstacles.Add(new Obstacle(new Vector3(12f, 4f, 12f), ObstacleType.Pillar));
+        obstacles.Add(new Obstacle(new Vector3(-12f, 4f, 12f), ObstacleType.Pillar));
+        
+        // Barriers for medium cover
+        obstacles.Add(new Obstacle(new Vector3(0f, 1.5f, 10f), ObstacleType.Barrier));
+        obstacles.Add(new Obstacle(new Vector3(7f, 1.5f, -5f), ObstacleType.Barrier, MathF.PI / 2));
+        obstacles.Add(new Obstacle(new Vector3(-7f, 1.5f, 5f), ObstacleType.Barrier, MathF.PI / 2));
+        
+        // A raised platform for height advantage
+        obstacles.Add(new Obstacle(new Vector3(0f, 0.25f, 0f), ObstacleType.Platform));
     }
 }

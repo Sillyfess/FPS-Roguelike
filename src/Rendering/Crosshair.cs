@@ -1,9 +1,10 @@
 using Silk.NET.OpenGL;
+using System;
 using System.Numerics;
 
 namespace FPSRoguelike.Rendering;
 
-public class Crosshair
+public class Crosshair : IDisposable
 {
     private GL gl;
     private uint vao, vbo;
@@ -14,6 +15,9 @@ public class Crosshair
     private float length = 15.0f;    // Length of each line
     private float gap = 5.0f;        // Gap from center
     private Vector3 color = new Vector3(0.0f, 1.0f, 0.0f); // Classic green
+    
+    // IDisposable pattern fields
+    private bool disposed = false;
     
     public Crosshair(GL glContext)
     {
@@ -112,10 +116,12 @@ void main()
         gl.ShaderSource(vertexShader, vertexShaderSource);
         gl.CompileShader(vertexShader);
         
-        string infoLog = gl.GetShaderInfoLog(vertexShader);
-        if (!string.IsNullOrWhiteSpace(infoLog))
+        // Check vertex shader compilation
+        gl.GetShader(vertexShader, ShaderParameterName.CompileStatus, out int vertexSuccess);
+        if (vertexSuccess == 0)
         {
-            Console.WriteLine($"Crosshair vertex shader: {infoLog}");
+            string infoLog = gl.GetShaderInfoLog(vertexShader);
+            throw new Exception($"Crosshair vertex shader compilation failed: {infoLog}");
         }
         
         // Compile fragment shader
@@ -123,10 +129,12 @@ void main()
         gl.ShaderSource(fragmentShader, fragmentShaderSource);
         gl.CompileShader(fragmentShader);
         
-        infoLog = gl.GetShaderInfoLog(fragmentShader);
-        if (!string.IsNullOrWhiteSpace(infoLog))
+        // Check fragment shader compilation
+        gl.GetShader(fragmentShader, ShaderParameterName.CompileStatus, out int fragmentSuccess);
+        if (fragmentSuccess == 0)
         {
-            Console.WriteLine($"Crosshair fragment shader: {infoLog}");
+            string infoLog = gl.GetShaderInfoLog(fragmentShader);
+            throw new Exception($"Crosshair fragment shader compilation failed: {infoLog}");
         }
         
         // Link shaders
@@ -135,10 +143,12 @@ void main()
         gl.AttachShader(shaderProgram, fragmentShader);
         gl.LinkProgram(shaderProgram);
         
-        infoLog = gl.GetProgramInfoLog(shaderProgram);
-        if (!string.IsNullOrWhiteSpace(infoLog))
+        // Check shader program linking
+        gl.GetProgram(shaderProgram, ProgramPropertyARB.LinkStatus, out int linkSuccess);
+        if (linkSuccess == 0)
         {
-            Console.WriteLine($"Crosshair shader linking: {infoLog}");
+            string infoLog = gl.GetProgramInfoLog(shaderProgram);
+            throw new Exception($"Crosshair shader linking failed: {infoLog}");
         }
         
         // Clean up
@@ -195,8 +205,53 @@ void main()
     
     public void Cleanup()
     {
-        gl.DeleteVertexArray(vao);
-        gl.DeleteBuffer(vbo);
-        gl.DeleteProgram(shaderProgram);
+        Dispose();
+    }
+    
+    // IDisposable implementation
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+    
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!disposed)
+        {
+            if (disposing)
+            {
+                // Dispose managed resources (none in this case)
+            }
+            
+            // Clean up unmanaged OpenGL resources
+            if (gl != null)
+            {
+                if (vao != 0)
+                {
+                    gl.DeleteVertexArray(vao);
+                    vao = 0;
+                }
+                
+                if (vbo != 0)
+                {
+                    gl.DeleteBuffer(vbo);
+                    vbo = 0;
+                }
+                
+                if (shaderProgram != 0)
+                {
+                    gl.DeleteProgram(shaderProgram);
+                    shaderProgram = 0;
+                }
+            }
+            
+            disposed = true;
+        }
+    }
+    
+    ~Crosshair()
+    {
+        Dispose(false);
     }
 }

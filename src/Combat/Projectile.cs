@@ -24,6 +24,31 @@ public class Projectile
     // Initialize projectile from pool and launch it
     public void Fire(Vector3 origin, Vector3 direction, float speed, float damage, bool fromEnemy = false)
     {
+        // Validate direction vector
+        if (float.IsNaN(direction.X) || float.IsNaN(direction.Y) || float.IsNaN(direction.Z))
+        {
+            throw new ArgumentException("Direction vector contains NaN values", nameof(direction));
+        }
+        
+        // Normalize direction if not already (with proper epsilon for floating point comparison)
+        float lengthSquared = direction.LengthSquared();
+        const float NORMALIZATION_EPSILON = 0.0001f; // Much tighter tolerance for unit vectors
+        if (Math.Abs(lengthSquared - 1.0f) > NORMALIZATION_EPSILON && lengthSquared > 0)
+        {
+            direction = Vector3.Normalize(direction);
+        }
+        
+        // Validate speed and damage
+        if (speed <= 0 || float.IsNaN(speed) || float.IsInfinity(speed))
+        {
+            throw new ArgumentException("Speed must be positive and finite", nameof(speed));
+        }
+        
+        if (damage < 0 || float.IsNaN(damage) || float.IsInfinity(damage))
+        {
+            throw new ArgumentException("Damage must be non-negative and finite", nameof(damage));
+        }
+        
         Position = origin;
         Velocity = direction * speed;
         Damage = damage;

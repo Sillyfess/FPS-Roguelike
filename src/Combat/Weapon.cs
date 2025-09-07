@@ -25,6 +25,29 @@ public class Weapon
     
     public void Fire(Vector3 origin, Vector3 direction, Action<RaycastHit> onHit, HashSet<int>? destroyedTargets = null)
     {
+        // Validate parameters
+        if (float.IsNaN(origin.X) || float.IsNaN(origin.Y) || float.IsNaN(origin.Z) ||
+            float.IsInfinity(origin.X) || float.IsInfinity(origin.Y) || float.IsInfinity(origin.Z))
+        {
+            throw new ArgumentException("Origin contains invalid values", nameof(origin));
+        }
+        
+        if (float.IsNaN(direction.X) || float.IsNaN(direction.Y) || float.IsNaN(direction.Z) ||
+            float.IsInfinity(direction.X) || float.IsInfinity(direction.Y) || float.IsInfinity(direction.Z))
+        {
+            throw new ArgumentException("Direction contains invalid values", nameof(direction));
+        }
+        
+        if (direction.LengthSquared() < 0.0001f)
+        {
+            throw new ArgumentException("Direction vector is too small", nameof(direction));
+        }
+        
+        if (onHit == null)
+        {
+            throw new ArgumentNullException(nameof(onHit));
+        }
+        
         if (!CanFire()) return;
         
         lastFireTime = currentTime;
@@ -44,24 +67,24 @@ public class Weapon
         currentTime += deltaTime;
     }
     
+    // Cached test positions to avoid allocation every raycast
+    private static readonly Vector3[] testPositions = new Vector3[]
+    {
+        new Vector3(0, 1, 0),      // Center floating cube
+        new Vector3(5, 1, 5),      // Corner cubes
+        new Vector3(-5, 1, 5),
+        new Vector3(5, 1, -5),
+        new Vector3(-5, 1, -5),
+        new Vector3(10, 2, 0),     // Distant cubes
+        new Vector3(-10, 2, 0),
+        new Vector3(0, 2, 10),
+        new Vector3(0, 2, -10),
+    };
+    
     private RaycastHit Raycast(Vector3 origin, Vector3 direction, float maxDistance, HashSet<int>? destroyedTargets = null)
     {
         // For now, just check against some test targets
         // In a real implementation, this would check against all entities
-        
-        // Simple hit detection against cubes at known positions (matching Game.cs positions)
-        var testPositions = new Vector3[]
-        {
-            new Vector3(0, 1, 0),      // Center floating cube
-            new Vector3(5, 1, 5),      // Corner cubes
-            new Vector3(-5, 1, 5),
-            new Vector3(5, 1, -5),
-            new Vector3(-5, 1, -5),
-            new Vector3(10, 2, 0),     // Distant cubes
-            new Vector3(-10, 2, 0),
-            new Vector3(0, 2, 10),
-            new Vector3(0, 2, -10),
-        };
         
         for (int i = 0; i < testPositions.Length; i++)
         {

@@ -1,21 +1,31 @@
 using Silk.NET.OpenGL;
+using System;
 using System.Numerics;
 using FPSRoguelike.Entities;
 using FPSRoguelike.Combat;
 
 namespace FPSRoguelike.UI;
 
-public class HUD
+public class HUD : IDisposable
 {
     private GL gl = null!;
     private uint hudShaderProgram;
-    private uint quadVAO, quadVBO;
+    private uint quadVAO, quadVBO, quadEBO;
     
     // Settings menu state
     private int selectedMenuItem = 0;
     private readonly string[] menuItems = { "Resume", "Mouse Sensitivity", "Field of View", "Exit Game" };
+    private readonly string[] menuDescriptions = { 
+        "Press ENTER to return to game",
+        "Use ← → arrows to adjust look speed", 
+        "Use ← → arrows to change camera FOV",
+        "Press ENTER to quit to desktop"
+    };
     private float mouseSensitivity = 0.3f;
     private float fieldOfView = 90f;
+    
+    // IDisposable pattern fields
+    private bool disposed = false;
     
     public float MouseSensitivity => mouseSensitivity;
     public float FieldOfView => fieldOfView;
@@ -80,7 +90,7 @@ public class HUD
         // Create quad VAO/VBO for UI rendering
         quadVAO = gl.GenVertexArray();
         quadVBO = gl.GenBuffer();
-        uint quadEBO = gl.GenBuffer();
+        quadEBO = gl.GenBuffer();
         
         gl.BindVertexArray(quadVAO);
         
@@ -138,12 +148,23 @@ public class HUD
             }
             else
             {
-                // Simple pause indicator
-                DrawQuad(-0.2f, -0.1f, 0.4f, 0.2f, new Vector4(0.1f, 0.1f, 0.1f, 0.9f));
-                DrawQuad(-0.2f, -0.1f, 0.4f, 0.01f, new Vector4(1f, 1f, 1f, 0.5f));
-                DrawQuad(-0.2f, 0.09f, 0.4f, 0.01f, new Vector4(1f, 1f, 1f, 0.5f));
-                DrawQuad(-0.2f, -0.1f, 0.01f, 0.2f, new Vector4(1f, 1f, 1f, 0.5f));
-                DrawQuad(0.19f, -0.1f, 0.01f, 0.2f, new Vector4(1f, 1f, 1f, 0.5f));
+                // Main pause menu
+                DrawQuad(-0.3f, -0.05f, 0.6f, 0.35f, new Vector4(0.1f, 0.1f, 0.1f, 0.9f));
+                DrawQuad(-0.3f, -0.05f, 0.6f, 0.01f, new Vector4(1f, 1f, 1f, 0.5f));
+                DrawQuad(-0.3f, 0.29f, 0.6f, 0.01f, new Vector4(1f, 1f, 1f, 0.5f));
+                DrawQuad(-0.3f, -0.05f, 0.01f, 0.35f, new Vector4(1f, 1f, 1f, 0.5f));
+                DrawQuad(0.29f, -0.05f, 0.01f, 0.35f, new Vector4(1f, 1f, 1f, 0.5f));
+                
+                // "PAUSED" title
+                DrawInfoBox(-0.15f, 0.2f, 0.3f, 0.06f, "PAUSED", new Vector4(0.8f, 0.2f, 0.2f, 0.8f));
+                
+                // Controls info
+                DrawInfoBox(-0.25f, 0.1f, 0.5f, 0.04f, "Press TAB for Settings", new Vector4(0.2f, 0.2f, 0.3f, 0.6f));
+                DrawInfoBox(-0.25f, 0.03f, 0.5f, 0.04f, "Press ESC to Resume", new Vector4(0.2f, 0.2f, 0.3f, 0.6f));
+                
+                // Game controls reminder
+                DrawInfoBox(-0.25f, -0.08f, 0.5f, 0.03f, "Controls: WASD Move | Mouse Look | Space Jump", new Vector4(0.1f, 0.1f, 0.2f, 0.5f));
+                DrawInfoBox(-0.25f, -0.13f, 0.5f, 0.03f, "LMB Shoot | R Respawn | F1 Debug | F2 Spawn Enemies", new Vector4(0.1f, 0.1f, 0.2f, 0.5f));
             }
             
             return; // Don't draw HUD when paused
@@ -161,6 +182,10 @@ public class HUD
                                  new Vector4(0.8f, 0.2f, 0.2f, 1.0f);
             
             DrawQuad(-0.9f, -0.9f, HEALTH_BAR_WIDTH * healthPercent, HEALTH_BAR_HEIGHT, healthColor);
+            
+            // Draw health numbers
+            string healthText = $"{(int)playerHealth.Health}/{(int)playerHealth.MaxHealth}";
+            DrawInfoBox(-0.65f, -0.93f, 0.15f, 0.06f, healthText, new Vector4(0.0f, 0.0f, 0.0f, 0.7f));
         }
         
         // Draw crosshair
@@ -248,14 +273,38 @@ public class HUD
         gl.ShaderSource(vertexShader, vertexSource);
         gl.CompileShader(vertexShader);
         
+        // Check vertex shader compilation
+        gl.GetShader(vertexShader, ShaderParameterName.CompileStatus, out int vertexSuccess);
+        if (vertexSuccess == 0)
+        {
+            string infoLog = gl.GetShaderInfoLog(vertexShader);
+            throw new Exception($"HUD vertex shader compilation failed: {infoLog}");
+        }
+        
         uint fragmentShader = gl.CreateShader(ShaderType.FragmentShader);
         gl.ShaderSource(fragmentShader, fragmentSource);
         gl.CompileShader(fragmentShader);
+        
+        // Check fragment shader compilation
+        gl.GetShader(fragmentShader, ShaderParameterName.CompileStatus, out int fragmentSuccess);
+        if (fragmentSuccess == 0)
+        {
+            string infoLog = gl.GetShaderInfoLog(fragmentShader);
+            throw new Exception($"HUD fragment shader compilation failed: {infoLog}");
+        }
         
         uint program = gl.CreateProgram();
         gl.AttachShader(program, vertexShader);
         gl.AttachShader(program, fragmentShader);
         gl.LinkProgram(program);
+        
+        // Check shader program linking
+        gl.GetProgram(program, ProgramPropertyARB.LinkStatus, out int linkSuccess);
+        if (linkSuccess == 0)
+        {
+            string infoLog = gl.GetProgramInfoLog(program);
+            throw new Exception($"HUD shader linking failed: {infoLog}");
+        }
         
         gl.DeleteShader(vertexShader);
         gl.DeleteShader(fragmentShader);
@@ -283,7 +332,7 @@ public class HUD
         
         // Title
         float titleY = menuY + menuHeight - 0.1f;
-        DrawQuad(menuX + 0.1f, titleY, menuWidth - 0.2f, 0.08f, new Vector4(0.2f, 0.3f, 0.5f, 0.8f));
+        DrawInfoBox(menuX + 0.1f, titleY, menuWidth - 0.2f, 0.08f, "SETTINGS", new Vector4(0.2f, 0.3f, 0.5f, 0.8f));
         
         // Menu items
         float itemHeight = 0.08f;
@@ -297,7 +346,11 @@ public class HUD
                 new Vector4(0.3f, 0.5f, 0.8f, 0.8f) : 
                 new Vector4(0.15f, 0.15f, 0.2f, 0.6f);
             
-            DrawQuad(menuX + 0.05f, itemY, menuWidth - 0.1f, itemHeight, itemColor);
+            // Draw menu item box with label
+            DrawInfoBox(menuX + 0.05f, itemY, menuWidth - 0.1f, itemHeight, menuItems[i], itemColor);
+            
+            // Draw description text below each item
+            DrawInfoBox(menuX + 0.05f, itemY - 0.025f, menuWidth - 0.1f, 0.02f, menuDescriptions[i], new Vector4(0.3f, 0.3f, 0.4f, 0.4f));
             
             // Draw value indicators for settings
             if (i == 1) // Mouse Sensitivity
@@ -318,7 +371,7 @@ public class HUD
         
         // Instructions
         float instructY = menuY + 0.05f;
-        DrawQuad(menuX + 0.1f, instructY, menuWidth - 0.2f, 0.06f, new Vector4(0.05f, 0.05f, 0.1f, 0.5f));
+        DrawInfoBox(menuX + 0.1f, instructY, menuWidth - 0.2f, 0.04f, "↑↓ Navigate | ←→ Adjust | ENTER Select | ESC Back", new Vector4(0.05f, 0.05f, 0.1f, 0.5f));
     }
     
     public void NavigateMenu(int direction)
@@ -346,8 +399,59 @@ public class HUD
     
     public void Cleanup()
     {
-        gl.DeleteVertexArray(quadVAO);
-        gl.DeleteBuffer(quadVBO);
-        gl.DeleteProgram(hudShaderProgram);
+        Dispose();
+    }
+    
+    // IDisposable implementation
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+    
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!disposed)
+        {
+            if (disposing)
+            {
+                // Dispose managed resources (none in this case)
+            }
+            
+            // Clean up unmanaged OpenGL resources
+            if (gl != null)
+            {
+                if (quadVAO != 0)
+                {
+                    gl.DeleteVertexArray(quadVAO);
+                    quadVAO = 0;
+                }
+                
+                if (quadVBO != 0)
+                {
+                    gl.DeleteBuffer(quadVBO);
+                    quadVBO = 0;
+                }
+                
+                if (quadEBO != 0)
+                {
+                    gl.DeleteBuffer(quadEBO);
+                    quadEBO = 0;
+                }
+                
+                if (hudShaderProgram != 0)
+                {
+                    gl.DeleteProgram(hudShaderProgram);
+                    hudShaderProgram = 0;
+                }
+            }
+            
+            disposed = true;
+        }
+    }
+    
+    ~HUD()
+    {
+        Dispose(false);
     }
 }

@@ -25,7 +25,7 @@ public class SimpleUIManager
     public void TogglePause()
     {
         isPaused = !isPaused;
-        Console.WriteLine(isPaused ? "=== GAME PAUSED ===" : "=== GAME RESUMED ===");
+        // Status now shown in HUD instead of console
     }
     
     public void ToggleDebugInfo()
@@ -36,10 +36,7 @@ public class SimpleUIManager
     public void PrintHUD(PlayerHealth? playerHealth, Weapon? weapon, int score, 
                         int waveNumber, int enemiesRemaining, float fps)
     {
-        if (!showDebugInfo) return;
-        
-        Console.SetCursorPosition(0, 0);
-        Console.WriteLine($"FPS: {fps:F1} | Health: {(int)(playerHealth?.Health ?? 0)}/{(int)(playerHealth?.MaxHealth ?? 100)} | Score: {score}");
-        Console.WriteLine($"Wave: {waveNumber} | Enemies: {enemiesRemaining} | Weapon: {weapon?.Name ?? "None"}");
+        // HUD is now rendered by HUD.cs using OpenGL
+        // This method kept for compatibility but no longer outputs to console
     }
 }

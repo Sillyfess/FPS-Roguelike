@@ -3,6 +3,9 @@
 ## Summary
 This document tracks remaining technical debt in the FPS Roguelike codebase. Many issues from the initial review have been addressed.
 
+**Last Updated**: September 2025
+**Status**: Active development - many issues fixed, some remain
+
 ## Recently Fixed Issues ✅
 - **Magic Numbers**: Extracted to named constants across all files
 - **Thread Safety**: InputSystem now uses locks and proper synchronization
@@ -37,11 +40,10 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
    - Mathematical operations (sqrt, division)
    - Array access operations
 
-2. **Shader Compilation Not Checked**
-   - HUD.cs, Game.cs, Crosshair.cs create shaders
-   - No glGetShaderiv to check compilation status
-   - No glGetShaderInfoLog for error messages
-   - App will crash/render incorrectly on shader errors
+2. **Shader Compilation Not Checked** ✅ FIXED
+   - Game.cs: ✅ FIXED - Now checks compilation status and throws exceptions
+   - HUD.cs: ✅ FIXED - Now checks compilation status and throws exceptions
+   - Crosshair.cs: ✅ FIXED - Now checks compilation status and throws exceptions
 
 3. **Null Reference Risks**
    - Extensive use of null-conditional operators (?.) suggests instability
@@ -51,16 +53,16 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
 ## Disposal Chain Broken
 
 ### Resources Not Properly Disposed
-1. **Program.cs**:
-   - Only calls Game.Cleanup() on window close
-   - Doesn't call InputSystem.Dispose()
-   - No disposal of HUD resources
+1. **Program.cs**: ✅ FIXED
+   - Now calls Game.Dispose() on window close
+   - Game.Dispose() properly chains disposal to all subsystems
+   - HUD resources properly disposed through chain
 
-2. **Missing IDisposable**:
-   - Game class (has Cleanup but not IDisposable)
-   - Renderer class (empty Cleanup method)
-   - HUD class (has Cleanup but never called)
-   - Crosshair class (has Cleanup but not IDisposable)
+2. **Missing IDisposable**: ✅ MOSTLY FIXED
+   - Game class: ✅ FIXED - Now implements IDisposable
+   - Crosshair class: ✅ FIXED - Now implements IDisposable
+   - HUD class: ✅ FIXED - Now implements IDisposable
+   - Renderer class: Still has empty Cleanup method
 
 3. **OpenGL Resources Leaked**:
    - VAOs, VBOs, EBOs, Shaders created but not always freed
@@ -68,11 +70,11 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
 
 ## Additional Architecture Issues
 
-### Projectile System Issues
-1. **No parameter validation in Fire()**
-   - Direction vector not normalized/validated
-   - Speed/damage not validated for reasonable ranges
-   - Could accept NaN/Infinity values
+### Projectile System Issues ✅ FIXED
+1. **Parameter validation in Fire()** ✅ FIXED
+   - Direction vector now validated for NaN
+   - Speed/damage validated for positive/finite values
+   - Throws ArgumentException on invalid input
 
 2. **Collision Detection Inefficiency**
    - CheckCollision called for every projectile vs every target every frame
@@ -91,9 +93,9 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
    - No persistence mechanism
 
 ### Renderer Issues
-1. **Console Output Still Present**
-   - Line 27: Initialization message to console
-   - Should use ILogger
+1. **Console Output** ✅ FIXED
+   - Removed initialization message from console
+   - Should use ILogger in future
 
 2. **Null-Conditional Operators Everywhere**
    - gl?.Viewport, gl?.ClearColor, gl?.Clear
@@ -111,10 +113,9 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
    - Should use epsilon for stability
 
 ### Enemy AI Issues
-1. **Static ID Counter Not Thread-Safe**
-   - Line 75: `static int nextId = 0`
-   - Line 79: `Id = nextId++` without synchronization
-   - Could result in duplicate IDs if enemies created concurrently
+1. **Static ID Counter** ✅ FIXED
+   - Added lock synchronization for thread-safe ID generation
+   - No risk of duplicate IDs when enemies created concurrently
 
 2. **Performance Issues**
    - Vector3.Distance used frequently (expensive sqrt)
@@ -142,11 +143,12 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
    - But Game.cs doesn't call Dispose() on it
 
 ### Console Output Still Present
-1. **Debug Messages Remain**
-   - UIManager.cs: 8 Console.WriteLine calls (lines 368-375)
-   - Renderer.cs: Initialization message
-   - Crosshair.cs: Shader compilation messages
-   - Should use ILogger interface instead
+1. **Debug Messages Remain** ✅ COMPLETELY FIXED
+   - Renderer.cs: ✅ FIXED - Removed initialization message
+   - Crosshair.cs: ✅ FIXED - Removed shader compilation console output
+   - HUD.cs: ✅ FIXED - No longer uses console output for shader errors
+   - SimpleUIManager.cs: ✅ FIXED - Removed all Console.WriteLine calls
+   - UIManager.cs: ✅ FIXED - No Console.WriteLine calls found
 
 ### Hardcoded Configuration
 1. **Window Settings**
@@ -191,12 +193,13 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
 
 ## New Issues Found During Deep Scan
 
-### Pause Functionality Added (HUD.cs update detected)
-- HUD.cs now includes pause rendering (lines 120-135)
-- isPaused parameter added to Render method
-- SimpleUIManager has pause toggle but no input binding found
+### UI System Updates
+- HUD.cs includes health bar, wave counter, score display
+- SimpleUIManager provides settings menu (ESC key)
+- Settings include FOV, mouse sensitivity, volume sliders
+- No settings persistence - changes lost on restart
 
-### HUD.cs - Previously Undocumented Component
+### HUD.cs - UI Rendering System
 1. **Resource Management Issues**
    - Creates OpenGL resources (VAO, VBO, EBO, shaders) but no IDisposable pattern
    - Has Cleanup() method but not called anywhere
@@ -217,8 +220,8 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
    - GetUniformLocation called every frame in DrawQuad (lines 197-198)
    - Should cache uniform locations at initialization
 
-5. **Division by Zero Risk**
-   - Line 125: `playerHealth.Health / playerHealth.MaxHealth` - no check if MaxHealth is 0
+5. ~~**Division by Zero Risk**~~ ✅ FIXED
+   - PlayerHealth.HealthPercentage now safely handles MaxHealth == 0
 
 ## New Issues Found (Post-Refactor Analysis)
 
@@ -236,11 +239,11 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
 
 ### Missing Input Validation
 
-1. **Public Methods Lack Parameter Validation**
-   - `Projectile.Fire()` - no validation of direction vector
-   - `Camera.UpdateRotation()` - no bounds check on delta
-   - `Enemy` constructor - no validation of health parameter
-   - `Weapon.Fire()` - no null check on onHit callback
+1. ~~**Public Methods Lack Parameter Validation**~~ ✅ FIXED
+   - `Projectile.Fire()` - ✅ FIXED - validates direction, speed, damage
+   - `Camera.UpdateRotation()` - ✅ FIXED - validates mouseDelta for NaN/Infinity
+   - `Enemy` constructor - ✅ FIXED - validates position and health
+   - `Weapon.Fire()` - ✅ FIXED - validates all parameters including onHit callback
 
 2. **No Bounds Checking**
    - Enemy positions can go infinite
@@ -326,11 +329,11 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
 
 ## Potential Bugs
 
-### 1. Floating Point Precision Issues Remain
-- Direct comparisons without epsilon still exist:
-  - `Enemy.cs`: `Position.Y > GROUND_LEVEL` (should use epsilon)
-  - `CharacterController.cs`: Ground detection
-  - Could cause jittering at boundaries
+### 1. ~~Floating Point Precision Issues~~ ✅ FIXED
+- ✅ FIXED - All issues resolved:
+  - `Enemy.cs`: Uses EPSILON constant for comparisons
+  - `CharacterController.cs`: Added epsilon for ground detection
+  - No more jittering at boundaries
 
 ### 2. Race Conditions in Enemy State
 - Enemy state can be modified from multiple sources
@@ -366,10 +369,10 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
   - Light direction: vec3(-0.5, -1.0, -0.3)
   - Object color: vec3(0.5, 0.6, 0.7)
 
-### 8. Memory Allocations in Update Loops
-- **InputSystem.cs lines 56-57**: Creates new HashSet copies every poll
-- **Weapon.cs line 53**: Creates new Vector3 array every raycast
-- **Impact**: GC pressure in hot paths
+### 8. ~~Memory Allocations in Update Loops~~ ✅ FIXED
+- **InputSystem.cs**: ✅ FIXED - Now uses Clear() and UnionWith() to reuse HashSets
+- **Weapon.cs**: ✅ FIXED - Vector3 array now static readonly field
+- **Impact**: Eliminated GC pressure in hot paths
 
 ### 9. Score System Hardcoded
 - **Game.cs lines 764, 801**: Fixed score values (100, 150)
@@ -425,17 +428,20 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
 ## Issue Statistics Update
 
 ### Original Issues Found: 35+
-### Issues Fixed: 15+ ✅
+### Issues Fixed: 31+ ✅
 ### New Issues Found: 20+
-### Total Remaining Issues: ~35+
+### Total Remaining Issues: ~19+
 
 **Fixed Categories:**
 - Magic Numbers: COMPLETELY FIXED ✅
 - Thread Safety: FIXED ✅
-- Console Output: FIXED ✅
+- Console Output: COMPLETELY FIXED ✅
 - Division by Zero: FIXED ✅
 - Random Instance: FIXED ✅
 - Input Error Handling: FIXED ✅
+- Parameter Validation: FIXED ✅
+- Memory Allocations in Hot Paths: FIXED ✅
+- Floating Point Precision: FIXED ✅
 
 **Partially Fixed:**
 - Resource Management: InputSystem fixed, OpenGL resources remain

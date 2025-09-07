@@ -53,6 +53,13 @@ public class Camera
     
     public void UpdateRotation(Vector2 mouseDelta)
     {
+        // Validate input
+        if (float.IsNaN(mouseDelta.X) || float.IsNaN(mouseDelta.Y) ||
+            float.IsInfinity(mouseDelta.X) || float.IsInfinity(mouseDelta.Y))
+        {
+            return; // Ignore invalid input
+        }
+        
         Yaw -= mouseDelta.X * mouseSensitivity;  // Fixed: negated for correct mouse look
         Pitch -= mouseDelta.Y * mouseSensitivity;
         
@@ -68,6 +75,12 @@ public class Camera
     
     public void UpdateMatrices(float aspectRatio, float? fov = null)
     {
+        // Validate aspect ratio
+        if (aspectRatio <= 0 || float.IsNaN(aspectRatio) || float.IsInfinity(aspectRatio))
+        {
+            throw new ArgumentException("Aspect ratio must be positive and finite", nameof(aspectRatio));
+        }
+        
         // Update FOV if provided
         if (fov.HasValue)
         {
@@ -145,6 +158,12 @@ public class Camera
     
     public void UpdateScreenshake(float deltaTime)
     {
+        // Validate deltaTime
+        if (deltaTime < 0 || float.IsNaN(deltaTime) || float.IsInfinity(deltaTime))
+        {
+            return; // Ignore invalid delta time
+        }
+        
         if (screenshakeTime > 0)
         {
             screenshakeTime -= deltaTime;

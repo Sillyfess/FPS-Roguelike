@@ -56,6 +56,6 @@ class Program
     
     private static void OnClose()
     {
-        game?.Cleanup();
+        game?.Dispose();
     }
 }

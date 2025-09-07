@@ -23,8 +23,6 @@ public class Renderer
         
         // Set viewport
         gl.Viewport(0, 0, (uint)screenWidth, (uint)screenHeight);
-        
-        Console.WriteLine($"Renderer initialized: {screenWidth}x{screenHeight}");
     }
     
     public void UpdateViewport(int width, int height)
@@ -36,7 +34,16 @@ public class Renderer
     
     public float GetAspectRatio()
     {
-        return (float)screenWidth / screenHeight;
+        // Prevent division by zero when window is minimized
+        // Store values locally to prevent race conditions
+        int height = screenHeight;
+        int width = screenWidth;
+        
+        if (height <= 0)
+        {
+            return 16.0f / 9.0f; // Default aspect ratio
+        }
+        return (float)width / height;
     }
     
     public void Clear(Vector3 clearColor)
