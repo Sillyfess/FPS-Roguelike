@@ -41,7 +41,7 @@ public class CharacterController
         Velocity = Vector3.Zero;
     }
     
-    public void Update(Vector3 moveInput, bool jumpPressed, float deltaTime, List<Obstacle> obstacles = null)
+    public void Update(Vector3 moveInput, bool jumpPressed, float deltaTime, List<Obstacle>? obstacles = null)
     {
         // Validate inputs to prevent physics corruption
         if (float.IsNaN(moveInput.X) || float.IsNaN(moveInput.Y) || float.IsNaN(moveInput.Z) ||

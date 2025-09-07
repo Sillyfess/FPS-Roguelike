@@ -122,8 +122,9 @@ public class Game : IDisposable
     // Combat
     private Revolver? revolver;
     private Katana? katana;
+    private SMG? smg;
     private SlashEffect? slashEffect;
-    private int currentWeaponIndex = 0; // 0 = revolver, 1 = katana
+    private int currentWeaponIndex = 0; // 0 = revolver, 1 = katana, 2 = SMG
     
     // Boss and combat
     private List<Enemy> enemies = new List<Enemy>();  // Using list for compatibility, but only one boss
@@ -172,6 +173,7 @@ public class Game : IDisposable
         // Initialize weapons
         revolver = new Revolver();
         katana = new Katana();
+        smg = new SMG();
         slashEffect = new SlashEffect(gl);
         
         // Create initial obstacles for the level
@@ -308,10 +310,24 @@ public class Game : IDisposable
             }
         }
         
+        // F1 - Toggle debug info and print to console
         if (inputSystem?.IsKeyJustPressed(Key.F1) == true)
         {
             uiManager?.ToggleDebugInfo();
+            
+            // Also print debug info to console
+            if (characterController != null && playerHealth != null)
+            {
+                Console.WriteLine($"\n=== DEBUG INFO ===");
+                Console.WriteLine($"Position: {characterController.Position:F2}");
+                Console.WriteLine($"Velocity: {characterController.Velocity:F2}");
+                Console.WriteLine($"Grounded: {characterController.IsGrounded}");
+                Console.WriteLine($"Health: {playerHealth.Health}/{playerHealth.MaxHealth}");
+                Console.WriteLine($"Boss Active: {(enemies.Count(e => e.IsAlive) > 0 ? "Yes" : "No")} | Total Kills: {enemiesKilled}");
+                Console.WriteLine($"==================\n");
+            }
         }
+        
         
         // Poll input for next frame
         inputSystem?.Poll();
@@ -321,6 +337,27 @@ public class Game : IDisposable
         
         // Don't update game logic if paused
         if (uiManager?.IsPaused == true) return;
+        
+        // Check for respawn input (works even when dead)
+        if (playerHealth?.IsAlive == false && inputSystem?.IsKeyJustPressed(Key.R) == true)
+        {
+            RespawnPlayer();
+            Console.WriteLine("Player respawned!");
+        }
+        
+        // Quick respawn - press F5 to instantly respawn even when alive
+        if (inputSystem?.IsKeyJustPressed(Key.F5) == true)
+        {
+            RespawnPlayer();
+            Console.WriteLine("Player respawned!");
+        }
+        
+        // Respawn boss for testing - F2
+        if (inputSystem?.IsKeyJustPressed(Key.F2) == true)
+        {
+            SpawnBoss();
+            Console.WriteLine("Boss spawned!");
+        }
         
         accumulator += deltaTime;
         
@@ -369,7 +406,13 @@ public class Game : IDisposable
         // Render HUD
         int aliveEnemies = enemies.Count(e => e.IsAlive);
         // Pass 0 for wave since we don't use waves anymore - just boss fights
-        Weapon currentWeapon = currentWeaponIndex == 0 ? revolver : katana;
+        Weapon? currentWeapon = currentWeaponIndex switch
+        {
+            0 => revolver,
+            1 => katana,
+            2 => smg,
+            _ => revolver
+        };
         hud?.Render(playerHealth, currentWeapon, score, 0, aliveEnemies, uiManager?.IsPaused ?? false, showSettingsMenu);
         uiManager?.PrintHUD(playerHealth, currentWeapon, score, 0, aliveEnemies, (float)fps);
     }
@@ -385,15 +428,10 @@ public class Game : IDisposable
         // Update player health
         playerHealth.Update(dt);
         
-        // Check if player is dead - block input but allow respawn
+        // Check if player is dead - block input
         if (!playerHealth.IsAlive)
         {
-            // Respawn player - only check here in fixed timestep to prevent double-triggering
-            if (inputSystem.IsKeyJustPressed(Key.R))
-            {
-                RespawnPlayer();
-            }
-            return; // Don't process input when dead
+            return; // Don't process input when dead (respawn is handled in main Update)
         }
         
         // Handle WASD movement input
@@ -424,6 +462,7 @@ public class Game : IDisposable
         // Update weapons (use scaled time)
         revolver?.Update(dt);
         katana?.Update(dt);
+        smg?.Update(dt);
         
         // Handle weapon switching with number keys
         if (inputSystem.IsKeyPressed(Key.Number1))
@@ -434,11 +473,22 @@ public class Game : IDisposable
         {
             SelectWeapon(0); // Revolver
         }
+        else if (inputSystem.IsKeyPressed(Key.Number3))
+        {
+            SelectWeapon(2); // SMG
+        }
         
         // Handle manual reload
-        if (inputSystem.IsKeyPressed(Key.R) && currentWeaponIndex == 0)
+        if (inputSystem.IsKeyPressed(Key.R))
         {
-            revolver?.StartReload();
+            if (currentWeaponIndex == 0)
+        {
+                revolver?.StartReload();
+            }
+            else if (currentWeaponIndex == 2)
+            {
+                smg?.StartReload();
+            }
         }
         
         // Handle shooting/slashing
@@ -457,21 +507,7 @@ public class Game : IDisposable
         CheckBossDefeat(dt);
         
         
-        // Debug output
-        if (inputSystem.IsKeyJustPressed(Key.F1))
-        {
-            Console.WriteLine($"Position: {characterController.Position:F2}");
-            Console.WriteLine($"Velocity: {characterController.Velocity:F2}");
-            Console.WriteLine($"Grounded: {characterController.IsGrounded}");
-            Console.WriteLine($"Health: {playerHealth.Health}/{playerHealth.MaxHealth}");
-            Console.WriteLine($"Boss Active: {(enemies.Count(e => e.IsAlive) > 0 ? "Yes" : "No")} | Total Kills: {enemiesKilled}");
-        }
-        
-        // Respawn boss for testing
-        if (inputSystem.IsKeyJustPressed(Key.F2))
-        {
-            SpawnBoss();
-        }
+        // Debug output moved to main Update for responsiveness
     }
     
     private void SetupTestCube()
@@ -814,8 +850,13 @@ void main()
             if (!enemy.IsActive || instanceCount >= MAX_ENEMY_INSTANCES) continue;
             
             // Build transformation matrix for this enemy
+            // Boss enemies are larger
+            float scaleX = enemy is Boss ? 3f : 1.5f;
+            float scaleY = enemy is Boss ? 4f : 2f;
+            float scaleZ = enemy is Boss ? 3f : 1.5f;
+            
             enemyInstanceData[instanceCount] = 
-                Matrix4x4.CreateScale(1.5f, 2f, 1.5f) *
+                Matrix4x4.CreateScale(scaleX, scaleY, scaleZ) *
                 Matrix4x4.CreateRotationY(enemy.GetYRotation()) *
                 Matrix4x4.CreateTranslation(enemy.Position);
             
@@ -1054,8 +1095,8 @@ void main()
                 // Dispose managed resources
                 inputSystem?.Dispose();
                 renderer?.Cleanup();
-                crosshair?.Cleanup();
-                hud?.Cleanup();
+                crosshair?.Dispose();
+                hud?.Dispose();
                 slashEffect?.Dispose();
             }
             
@@ -1114,7 +1155,7 @@ void main()
         
         // Spawn a single powerful boss enemy
         Vector3 bossSpawnPos = new Vector3(0, 1f, 20f); // Spawn in front of player at distance
-        var boss = new Enemy(bossSpawnPos, BOSS_HEALTH);
+        var boss = new Boss(bossSpawnPos, BOSS_HEALTH);
         enemies.Add(boss);
         
         Console.WriteLine($"\n=== BOSS FIGHT ===");
@@ -1142,6 +1183,48 @@ void main()
                 FireEnemyProjectile(enemy);
                 // Only consume cooldown if projectile was actually fired
                 enemy.ConsumeAttackCooldown(gameTime);
+            }
+            
+            // Check if enemy is charging and close enough to deal melee damage
+            if (enemy.HasChargeDamageReady)
+            {
+                float distanceToPlayer = Vector3.Distance(enemy.Position, characterController.Position);
+                if (distanceToPlayer <= 2f) // Within melee range
+                {
+                    playerHealth?.TakeDamage(enemy.GetChargeDamage());
+                    enemy.ConsumeChargeDamage();
+                    
+                    // Apply knockback to player
+                    Vector3 knockback = Vector3.Normalize(characterController.Position - enemy.Position);
+                    knockback.Y = 0.3f; // Add slight upward force
+                    characterController.Velocity += knockback * 10f;
+                    
+                    // Screenshake for impact
+                    camera.TriggerScreenshake();
+                    
+                    Console.WriteLine($"[Enemy {enemy.Id}] Charge hit player for {enemy.GetChargeDamage()} damage!");
+                }
+            }
+            
+            // Check if boss has melee damage ready
+            if (enemy is Boss boss && boss.HasMeleeDamageReady)
+            {
+                float distanceToPlayer = Vector3.Distance(enemy.Position, characterController.Position);
+                if (distanceToPlayer <= 3f) // Boss melee range
+                {
+                    playerHealth?.TakeDamage(boss.GetMeleeDamage());
+                    boss.ConsumeMeleeDamage();
+                    
+                    // Apply knockback to player
+                    Vector3 knockback = Vector3.Normalize(characterController.Position - enemy.Position);
+                    knockback.Y = 0.2f; // Slight upward force
+                    characterController.Velocity += knockback * 8f;
+                    
+                    // Screenshake for melee hit
+                    camera.TriggerScreenshake();
+                    
+                    Console.WriteLine($"[BOSS] Melee attack hit player for {boss.GetMeleeDamage()} damage!");
+                }
             }
             
             // Mark dead enemies for removal
@@ -1273,6 +1356,31 @@ void main()
             
             Console.WriteLine($"[{katana.Name}] Slashed!");
         }
+        else if (currentWeaponIndex == 2)
+        {
+            // SMG
+            if (smg == null || !smg.CanShoot()) return;
+            
+            // Light recoil for SMG
+            camera.TriggerRecoil(0.5f);
+            
+            // Spawn a projectile with spread
+            var projectile = projectiles.FirstOrDefault(p => !p.IsActive);
+            if (projectile != null)
+            {
+                Vector3 origin = camera.Position;
+                Vector3 baseDirection = camera.GetForwardVector();
+                Vector3 direction = smg.GetSpreadDirection(baseDirection);
+                projectile.Fire(origin, direction, smg.ProjectileSpeed, smg.Damage, fromEnemy: false);
+                smg.Shoot(); // Consume ammo and handle auto-reload
+            }
+            else
+            {
+                Console.WriteLine("[WARNING] Projectile pool exhausted! Cannot fire.");
+            }
+            
+            Console.WriteLine($"[{smg.Name}] Fired! ({smg.CurrentAmmo}/{smg.MaxAmmo})");
+        }
     }
     
     private void SelectWeapon(int index)
@@ -1280,7 +1388,13 @@ void main()
         if (index != currentWeaponIndex)
         {
             currentWeaponIndex = index;
-            string weaponName = currentWeaponIndex == 0 ? revolver?.Name ?? "Revolver" : katana?.Name ?? "Katana";
+            string weaponName = currentWeaponIndex switch
+            {
+                0 => revolver?.Name ?? "Revolver",
+                1 => katana?.Name ?? "Katana",
+                2 => smg?.Name ?? "SMG",
+                _ => "Unknown"
+            };
             Console.WriteLine($"Switched to {weaponName}");
         }
     }
@@ -1340,30 +1454,7 @@ void main()
     {
         obstacles.Clear();
         
-        // Create a variety of obstacles around the level
-        
-        // Some crates for cover
-        obstacles.Add(new Obstacle(new Vector3(10f, 1f, 10f), ObstacleType.Crate));
-        obstacles.Add(new Obstacle(new Vector3(-8f, 1f, 15f), ObstacleType.Crate));
-        obstacles.Add(new Obstacle(new Vector3(5f, 1f, -12f), ObstacleType.Crate));
-        
-        // Wall segments for tactical positioning
-        obstacles.Add(new Obstacle(new Vector3(15f, 3f, 0f), ObstacleType.Wall, MathF.PI / 4));
-        obstacles.Add(new Obstacle(new Vector3(-15f, 3f, 8f), ObstacleType.Wall, -MathF.PI / 3));
-        obstacles.Add(new Obstacle(new Vector3(0f, 3f, -20f), ObstacleType.Wall, MathF.PI / 2));
-        
-        // Pillars for visual variety and cover
-        obstacles.Add(new Obstacle(new Vector3(8f, 4f, -8f), ObstacleType.Pillar));
-        obstacles.Add(new Obstacle(new Vector3(-10f, 4f, -10f), ObstacleType.Pillar));
-        obstacles.Add(new Obstacle(new Vector3(12f, 4f, 12f), ObstacleType.Pillar));
-        obstacles.Add(new Obstacle(new Vector3(-12f, 4f, 12f), ObstacleType.Pillar));
-        
-        // Barriers for medium cover
-        obstacles.Add(new Obstacle(new Vector3(0f, 1.5f, 10f), ObstacleType.Barrier));
-        obstacles.Add(new Obstacle(new Vector3(7f, 1.5f, -5f), ObstacleType.Barrier, MathF.PI / 2));
-        obstacles.Add(new Obstacle(new Vector3(-7f, 1.5f, 5f), ObstacleType.Barrier, MathF.PI / 2));
-        
-        // A raised platform for height advantage
-        obstacles.Add(new Obstacle(new Vector3(0f, 0.25f, 0f), ObstacleType.Platform));
+        // One central pillar
+        obstacles.Add(new Obstacle(new Vector3(0f, 6f, 0f), ObstacleType.Pillar));
     }
 }

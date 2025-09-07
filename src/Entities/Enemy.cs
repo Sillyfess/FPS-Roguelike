@@ -10,6 +10,7 @@ public enum EnemyState
     Patrolling, // Moving to random points
     Chasing,    // Actively pursuing the player
     Attacking,  // In range and firing projectiles
+    Charging,   // Melee charge attack
     Dead        // Destroyed, awaiting cleanup
 }
 
@@ -35,35 +36,46 @@ public class Enemy
     private const float DEFAULT_PROJECTILE_SPEED = 20f;
     private const float DEFAULT_DAMAGE = 10f;
     
+    // Melee charge constants
+    private const float CHARGE_RANGE = 8f; // Distance to trigger charge
+    private const float CHARGE_SPEED = 15f; // Fast charge speed
+    private const float CHARGE_DAMAGE = 25f; // High melee damage
+    private const float CHARGE_DURATION = 0.5f; // How long the charge lasts
+    private const float CHARGE_COOLDOWN = 3f; // Cooldown between charges
+    private const float CHARGE_HIT_RANGE = 2f; // How close to deal damage
+    
     // Movement parameters
-    private float moveSpeed = DEFAULT_MOVE_SPEED;
-    private float chaseSpeed = DEFAULT_CHASE_SPEED;
+    protected float moveSpeed = DEFAULT_MOVE_SPEED;
+    protected float chaseSpeed = DEFAULT_CHASE_SPEED;
     
     // Combat parameters  
-    private float attackRange = DEFAULT_ATTACK_RANGE;
-    private float attackCooldown = DEFAULT_ATTACK_COOLDOWN;
-    private float projectileSpeed = DEFAULT_PROJECTILE_SPEED;
-    private float damage = DEFAULT_DAMAGE;
+    protected float attackRange = DEFAULT_ATTACK_RANGE;
+    protected float attackCooldown = DEFAULT_ATTACK_COOLDOWN;
+    protected float projectileSpeed = DEFAULT_PROJECTILE_SPEED;
+    protected float damage = DEFAULT_DAMAGE;
     
     // AI State
-    private EnemyState currentState = EnemyState.Idle;
-    private float stateTimer = 0f;
-    private float lastAttackTime = 0f;
-    private Vector3 targetPosition;
-    private Vector3 patrolTarget;
-    private float yRotation = 0f;
+    protected EnemyState currentState = EnemyState.Idle;
+    protected float stateTimer = 0f;
+    protected float lastAttackTime = 0f;
+    protected float lastChargeTime = 0f;
+    protected Vector3 targetPosition;
+    protected Vector3 patrolTarget;
+    protected Vector3 chargeDirection;
+    protected float yRotation = 0f;
+    protected bool hasDealtChargeDamage = false;
     
     // Detection constants
     private const float DEFAULT_DETECTION_RANGE = 20f;
     private const float DEFAULT_LOSE_TARGET_RANGE = 30f;
     
     // Detection parameters
-    private float detectionRange = DEFAULT_DETECTION_RANGE;
-    private float loseTargetRange = DEFAULT_LOSE_TARGET_RANGE;
+    protected float detectionRange = DEFAULT_DETECTION_RANGE;
+    protected float loseTargetRange = DEFAULT_LOSE_TARGET_RANGE;
     
     // Visual
-    public Vector3 Color { get; private set; } = new Vector3(1.0f, 0.2f, 0.2f); // Red color
-    private float hitFlashTimer = 0f;
+    public Vector3 Color { get; protected set; } = new Vector3(1.0f, 0.2f, 0.2f); // Red color
+    protected float hitFlashTimer = 0f;
     private const float HIT_FLASH_DURATION = 0.1f;
     
     // Hitstop - individual enemy freezing on hit
@@ -105,7 +117,7 @@ public class Enemy
         GenerateNewPatrolTarget();
     }
     
-    public void Update(float deltaTime, Vector3 playerPosition, List<Obstacle> obstacles = null)
+    public void Update(float deltaTime, Vector3 playerPosition, List<Obstacle>? obstacles = null)
     {
         // Dead enemies don't update
         if (!IsAlive)
@@ -155,6 +167,10 @@ public class Enemy
                     
                 case EnemyState.Attacking:
                     HandleAttackingState(scaledDeltaTime, distanceToPlayer);
+                    break;
+                    
+                case EnemyState.Charging:
+                    HandleChargingState(scaledDeltaTime, distanceToPlayer, playerPosition);
                     break;
             }
         }
@@ -235,7 +251,7 @@ public class Enemy
         }
     }
     
-    private void HandleIdleState(float distanceToPlayer)
+    protected virtual void HandleIdleState(float distanceToPlayer)
     {
         Velocity = Vector3.Zero; // Stand still
         
@@ -251,7 +267,7 @@ public class Enemy
         }
     }
     
-    private void HandlePatrollingState(float deltaTime, float distanceToPlayer)
+    protected virtual void HandlePatrollingState(float deltaTime, float distanceToPlayer)
     {
         if (distanceToPlayer <= detectionRange)
         {
@@ -281,7 +297,7 @@ public class Enemy
         }
     }
     
-    private void HandleChasingState(float deltaTime, float distanceToPlayer)
+    protected virtual void HandleChasingState(float deltaTime, float distanceToPlayer)
     {
         // Lost the player - go back to patrolling
         if (distanceToPlayer > loseTargetRange)
@@ -290,7 +306,15 @@ public class Enemy
             return;
         }
         
-        // Close enough to attack
+        // Check for charge opportunity (closer than attack range, charge not on cooldown)
+        float currentTime = (float)DateTime.Now.Subtract(DateTime.UnixEpoch).TotalSeconds;
+        if (distanceToPlayer <= CHARGE_RANGE && currentTime - lastChargeTime >= CHARGE_COOLDOWN)
+        {
+            InitiateCharge();
+            return;
+        }
+        
+        // Close enough to attack normally
         if (distanceToPlayer <= attackRange)
         {
             ChangeState(EnemyState.Attacking);
@@ -313,7 +337,7 @@ public class Enemy
         }
     }
     
-    private void HandleAttackingState(float deltaTime, float distanceToPlayer)
+    protected virtual void HandleAttackingState(float deltaTime, float distanceToPlayer)
     {
         Velocity = Vector3.Zero; // Stop to attack
         
@@ -340,7 +364,7 @@ public class Enemy
         // Attack logic will be handled by Game.cs checking CanAttack()
     }
     
-    public bool CanAttack(float currentTime)
+    public virtual bool CanAttack(float currentTime)
     {
         // Must be in attack state
         if (currentState != EnemyState.Attacking) return false;
@@ -365,7 +389,7 @@ public class Enemy
     public float GetProjectileSpeed() => projectileSpeed;
     public float GetDamage() => damage;
     
-    public void TakeDamage(float amount)
+    public virtual void TakeDamage(float amount)
     {
         if (!IsAlive) return;
         
@@ -393,7 +417,7 @@ public class Enemy
         // Enemy destroyed
     }
     
-    private void ChangeState(EnemyState newState)
+    protected void ChangeState(EnemyState newState)
     {
         currentState = newState;
         stateTimer = 0f;
@@ -413,6 +437,64 @@ public class Enemy
             0,
             MathF.Cos(angle) * distance
         );
+    }
+    
+    protected virtual void HandleChargingState(float deltaTime, float distanceToPlayer, Vector3 playerPosition)
+    {
+        // Check if charge duration is over
+        if (stateTimer >= CHARGE_DURATION)
+        {
+            // Return to chasing after charge
+            ChangeState(EnemyState.Chasing);
+            hasDealtChargeDamage = false;
+            return;
+        }
+        
+        // Move at charge speed in the locked direction
+        Velocity = chargeDirection * CHARGE_SPEED;
+        
+        // Check if we're close enough to deal damage
+        if (!hasDealtChargeDamage && distanceToPlayer <= CHARGE_HIT_RANGE)
+        {
+            // This flag will be checked by Game.cs to deal damage
+            hasDealtChargeDamage = true;
+        }
+        
+        // Visual feedback - turn orange during charge
+        Color = new Vector3(1.0f, 0.6f, 0.2f);
+    }
+    
+    private void InitiateCharge()
+    {
+        ChangeState(EnemyState.Charging);
+        
+        // Lock in the charge direction at the start
+        Vector3 toPlayer = targetPosition - Position;
+        toPlayer.Y = 0; // Keep on ground
+        
+        if (toPlayer.LengthSquared() > 0)
+        {
+            chargeDirection = Vector3.Normalize(toPlayer);
+            yRotation = MathF.Atan2(chargeDirection.X, chargeDirection.Z);
+        }
+        else
+        {
+            chargeDirection = new Vector3(MathF.Sin(yRotation), 0, MathF.Cos(yRotation));
+        }
+        
+        lastChargeTime = (float)DateTime.Now.Subtract(DateTime.UnixEpoch).TotalSeconds;
+        hasDealtChargeDamage = false;
+        
+        Console.WriteLine($"[Enemy {Id}] Initiating charge!");
+    }
+    
+    public bool IsCharging => currentState == EnemyState.Charging;
+    public bool HasChargeDamageReady => IsCharging && hasDealtChargeDamage && !IsInHitstop;
+    public virtual float GetChargeDamage() => CHARGE_DAMAGE;
+    
+    public void ConsumeChargeDamage()
+    {
+        hasDealtChargeDamage = false;
     }
     
     public float GetYRotation() => yRotation;
