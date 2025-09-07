@@ -139,6 +139,7 @@ public class Game : IDisposable
     private double fps = 0;
     private double fpsTimer = 0;
     private int frameCount = 0;
+    private float respawnCooldown = 0f;
     
     // UI
     private Crosshair? crosshair;
@@ -236,7 +237,7 @@ public class Game : IDisposable
             fpsTimer = 0;
         }
         
-        // Handle UI inputs BEFORE polling (check previous frame's state)
+        // Handle UI inputs
         if (inputSystem?.IsKeyJustPressed(Key.Escape) == true)
         {
             if (uiManager?.IsPaused == true)
@@ -328,21 +329,26 @@ public class Game : IDisposable
             }
         }
         
-        
-        // Poll input for next frame
-        inputSystem?.Poll();
-        
         // Update UI
         uiManager?.Update(deltaTime);
         
-        // Don't update game logic if paused
-        if (uiManager?.IsPaused == true) return;
+        // Update respawn cooldown
+        if (respawnCooldown > 0)
+            respawnCooldown -= (float)deltaTime;
         
         // Check for respawn input (works even when dead)
-        if (playerHealth?.IsAlive == false && inputSystem?.IsKeyJustPressed(Key.R) == true)
+        if (playerHealth?.IsAlive == false && respawnCooldown <= 0)
         {
-            RespawnPlayer();
-            Console.WriteLine("Player respawned!");
+            // Debug: Check both pressed and just pressed states
+            bool rPressed = inputSystem?.IsKeyPressed(Key.R) == true;
+            bool rJustPressed = inputSystem?.IsKeyJustPressed(Key.R) == true;
+            
+            if (rJustPressed || rPressed)  // Accept either state for respawn
+            {
+                RespawnPlayer();
+                respawnCooldown = 0.5f; // Half second cooldown to prevent double-respawn
+                Console.WriteLine($"Player respawned! (JustPressed: {rJustPressed}, Pressed: {rPressed})");
+            }
         }
         
         // Quick respawn - press F5 to instantly respawn even when alive
@@ -359,31 +365,38 @@ public class Game : IDisposable
             Console.WriteLine("Boss spawned!");
         }
         
-        accumulator += deltaTime;
-        
-        // Handle mouse look every frame (not in fixed timestep)
-        if (inputSystem != null && camera != null)
+        // Only update game when not paused
+        if (uiManager?.IsPaused != true)
         {
-            Vector2 mouseDelta = inputSystem.GetMouseDelta();
+            accumulator += deltaTime;
             
-            // Apply mouse sensitivity from HUD settings or UI settings
-            float sensitivity = hud?.MouseSensitivity ?? uiManager?.MouseSensitivity ?? 0.3f;
-            mouseDelta *= sensitivity;
+            // Handle mouse look every frame (not in fixed timestep)
+            if (inputSystem != null && camera != null)
+            {
+                Vector2 mouseDelta = inputSystem.GetMouseDelta();
+                
+                // Apply mouse sensitivity from HUD settings or UI settings
+                float sensitivity = hud?.MouseSensitivity ?? uiManager?.MouseSensitivity ?? 0.3f;
+                mouseDelta *= sensitivity;
+                
+                camera.UpdateRotation(mouseDelta);
+            }
             
-            camera.UpdateRotation(mouseDelta);
+            // Removed respawn check from here - now only handled in fixed timestep to prevent double-triggering
+            
+            int updates = 0;
+            while (accumulator >= FIXED_TIMESTEP && updates < MAX_UPDATES)
+            {
+                // Fixed update
+                UpdateGameLogic(FIXED_TIMESTEP);
+                
+                accumulator -= FIXED_TIMESTEP;
+                updates++;
+            }
         }
         
-        // Removed respawn check from here - now only handled in fixed timestep to prevent double-triggering
-        
-        int updates = 0;
-        while (accumulator >= FIXED_TIMESTEP && updates < MAX_UPDATES)
-        {
-            // Fixed update
-            UpdateGameLogic(FIXED_TIMESTEP);
-            
-            accumulator -= FIXED_TIMESTEP;
-            updates++;
-        }
+        // Poll input at end of frame to capture state changes for next frame's edge detection
+        inputSystem?.Poll();
         
         // Exit handled via Alt+F4 or window close button
     }
