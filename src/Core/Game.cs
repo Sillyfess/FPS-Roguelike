@@ -115,20 +115,22 @@ public class Game : IDisposable
     
     // Combat constants
     private const int MAX_PROJECTILES = 500;
-    private const float WAVE_DELAY = 5f;
     private const float PLAYER_RADIUS = 0.5f;
+    private const float BOSS_HEALTH = 500f;  // Single powerful boss
+    private const float BOSS_SIZE = 3f;  // Boss is much larger
     
     // Combat
-    private Weapon? weapon;
+    private Revolver? revolver;
+    private Katana? katana;
+    private SlashEffect? slashEffect;
+    private int currentWeaponIndex = 0; // 0 = revolver, 1 = katana
     
-    // Enemies
-    private List<Enemy> enemies = new List<Enemy>();
+    // Boss and combat
+    private List<Enemy> enemies = new List<Enemy>();  // Using list for compatibility, but only one boss
     private List<Projectile> projectiles = new List<Projectile>();
     private List<Obstacle> obstacles = new List<Obstacle>();
     private float gameTime = 0f; // Total game time for attack timing
     private int enemiesKilled = 0;
-    private int currentWave = 0;
-    private float waveTimer = 0f;
     
     // Player
     private PlayerHealth? playerHealth;
@@ -167,8 +169,10 @@ public class Game : IDisposable
         characterController = new CharacterController(playerStartPosition);
         camera = new Camera(characterController.Position);
         
-        // Initialize weapon
-        weapon = new Weapon();
+        // Initialize weapons
+        revolver = new Revolver();
+        katana = new Katana();
+        slashEffect = new SlashEffect(gl);
         
         // Create initial obstacles for the level
         GenerateObstacles();
@@ -192,8 +196,8 @@ public class Game : IDisposable
             projectiles.Add(new Projectile());
         }
         
-        // Spawn initial enemies for testing
-        SpawnWave(1);
+        // Spawn the boss
+        SpawnBoss();
         
         // Lock cursor for FPS
         var input = window.CreateInput();
@@ -208,7 +212,10 @@ public class Game : IDisposable
         Console.WriteLine("  WASD - Move");
         Console.WriteLine("  Mouse - Look around");
         Console.WriteLine("  Space - Jump");
-        Console.WriteLine("  Left Mouse - Shoot");
+        Console.WriteLine("  Left Mouse - Shoot/Slash");
+        Console.WriteLine("  1 - Katana");
+        Console.WriteLine("  2 - Revolver");
+        Console.WriteLine("  R - Reload revolver");
         Console.WriteLine("  F1 - Debug info");
         Console.WriteLine("  F2 - Spawn more enemies");
         Console.WriteLine("  ESC - Exit");
@@ -361,8 +368,10 @@ public class Game : IDisposable
         
         // Render HUD
         int aliveEnemies = enemies.Count(e => e.IsAlive);
-        hud?.Render(playerHealth, weapon, score, currentWave, aliveEnemies, uiManager?.IsPaused ?? false, showSettingsMenu);
-        uiManager?.PrintHUD(playerHealth, weapon, score, currentWave, aliveEnemies, (float)fps);
+        // Pass 0 for wave since we don't use waves anymore - just boss fights
+        Weapon currentWeapon = currentWeaponIndex == 0 ? revolver : katana;
+        hud?.Render(playerHealth, currentWeapon, score, 0, aliveEnemies, uiManager?.IsPaused ?? false, showSettingsMenu);
+        uiManager?.PrintHUD(playerHealth, currentWeapon, score, 0, aliveEnemies, (float)fps);
     }
     
     private void UpdateGameLogic(double fixedDeltaTime)
@@ -412,10 +421,27 @@ public class Game : IDisposable
         // Update camera position to follow player (with eye height offset)
         camera.Position = characterController.Position;
         
-        // Update weapon (use scaled time)
-        weapon?.Update(dt);
+        // Update weapons (use scaled time)
+        revolver?.Update(dt);
+        katana?.Update(dt);
         
-        // Handle shooting
+        // Handle weapon switching with number keys
+        if (inputSystem.IsKeyPressed(Key.Number1))
+        {
+            SelectWeapon(1); // Katana
+        }
+        else if (inputSystem.IsKeyPressed(Key.Number2))
+        {
+            SelectWeapon(0); // Revolver
+        }
+        
+        // Handle manual reload
+        if (inputSystem.IsKeyPressed(Key.R) && currentWeaponIndex == 0)
+        {
+            revolver?.StartReload();
+        }
+        
+        // Handle shooting/slashing
         if (inputSystem.IsMouseButtonPressed(MouseButton.Left))
         {
             FireWeapon();
@@ -427,8 +453,8 @@ public class Game : IDisposable
         // Update projectiles (use normal time)
         UpdateProjectiles(dt);
         
-        // Check for wave completion
-        CheckWaveCompletion(dt);
+        // Check if boss is defeated
+        CheckBossDefeat(dt);
         
         
         // Debug output
@@ -438,14 +464,13 @@ public class Game : IDisposable
             Console.WriteLine($"Velocity: {characterController.Velocity:F2}");
             Console.WriteLine($"Grounded: {characterController.IsGrounded}");
             Console.WriteLine($"Health: {playerHealth.Health}/{playerHealth.MaxHealth}");
-            Console.WriteLine($"Enemies: {enemies.Count(e => e.IsAlive)} | Killed: {enemiesKilled}");
-            Console.WriteLine($"Wave: {currentWave}");
+            Console.WriteLine($"Boss Active: {(enemies.Count(e => e.IsAlive) > 0 ? "Yes" : "No")} | Total Kills: {enemiesKilled}");
         }
         
-        // Spawn enemies manually for testing
+        // Respawn boss for testing
         if (inputSystem.IsKeyJustPressed(Key.F2))
         {
-            SpawnWave(currentWave + 1);
+            SpawnBoss();
         }
     }
     
@@ -771,6 +796,13 @@ void main()
         
         // Render all projectiles in a single draw call using GPU instancing
         RenderProjectilesInstanced(view, projection);
+        
+        // Render katana slash effect
+        if (katana?.IsSlashing == true && slashEffect != null)
+        {
+            var slashPoints = katana.GetSlashVisualizationPoints();
+            slashEffect.Render(slashPoints, katana.SlashProgress, view, projection);
+        }
     }
     
     private void RenderEnemiesInstanced(Matrix4x4 view, Matrix4x4 projection)
@@ -1024,6 +1056,7 @@ void main()
                 renderer?.Cleanup();
                 crosshair?.Cleanup();
                 hud?.Cleanup();
+                slashEffect?.Dispose();
             }
             
             // Clean up unmanaged resources (OpenGL)
@@ -1074,66 +1107,19 @@ void main()
     
     // Hitstop methods removed - now handled per-enemy
     
-    private void SpawnWave(int wave)
+    private void SpawnBoss()
     {
-        currentWave = wave;
-        waveTimer = 0f;
+        // Clear any existing enemies
+        enemies.Clear();
         
-        // Exponential enemy scaling: 5, 7, 10, 15, 22, 33, 50...
-        int enemiesToSpawn = (int)(5 * Math.Pow(1.5, wave - 1));
-        enemiesToSpawn = Math.Min(enemiesToSpawn, 100); // Cap at 100 to prevent total chaos
-        Console.WriteLine($"\n=== WAVE {wave} === Spawning {enemiesToSpawn} enemies!");
+        // Spawn a single powerful boss enemy
+        Vector3 bossSpawnPos = new Vector3(0, 1f, 20f); // Spawn in front of player at distance
+        var boss = new Enemy(bossSpawnPos, BOSS_HEALTH);
+        enemies.Add(boss);
         
-        Random rand = new Random();
-        const float ENEMY_SPAWN_RADIUS = 0.75f;
-        const int MAX_SPAWN_ATTEMPTS = 50;
-        
-        for (int i = 0; i < enemiesToSpawn; i++)
-        {
-            bool validSpawn = false;
-            int attempts = 0;
-            Vector3 spawnPos = Vector3.Zero;
-            
-            // Try to find a valid spawn position not inside obstacles
-            while (!validSpawn && attempts < MAX_SPAWN_ATTEMPTS)
-            {
-                // Spawn enemies in a circle around the player at random distances
-                float angle = (float)(rand.NextDouble() * Math.PI * 2);
-                float distance = 15f + (float)(rand.NextDouble() * 15f); // 15-30 units away
-                
-                spawnPos = new Vector3(
-                    characterController!.Position.X + MathF.Sin(angle) * distance,
-                    1f,
-                    characterController.Position.Z + MathF.Cos(angle) * distance
-                );
-                
-                // Check if spawn position collides with any obstacle
-                validSpawn = true;
-                foreach (var obstacle in obstacles)
-                {
-                    if (obstacle.CheckCollision(spawnPos, ENEMY_SPAWN_RADIUS))
-                    {
-                        validSpawn = false;
-                        break;
-                    }
-                }
-                
-                attempts++;
-            }
-            
-            // Only spawn if we found a valid position
-            if (validSpawn)
-            {
-                // Exponential health scaling: 30, 45, 67, 101, 151...
-                float enemyHealth = 30f * MathF.Pow(1.5f, wave - 1);
-                var enemy = new Enemy(spawnPos, enemyHealth);
-                enemies.Add(enemy);
-            }
-            else
-            {
-                Console.WriteLine($"Warning: Could not find valid spawn position for enemy {i + 1}");
-            }
-        }
+        Console.WriteLine($"\n=== BOSS FIGHT ===");
+        Console.WriteLine($"Boss Health: {BOSS_HEALTH} HP");
+        Console.WriteLine("Defeat the boss to win!");
     }
     
     private void UpdateEnemies(float deltaTime)
@@ -1224,7 +1210,7 @@ void main()
                     
                     if (projectile.CheckCollision(enemy.Position, 1f))
                     {
-                        enemy.TakeDamage(weapon?.Damage ?? 10f);
+                        enemy.TakeDamage(10f);
                         projectile.Deactivate();
                         
                         // Hitstop now handled per-enemy in TakeDamage
@@ -1244,26 +1230,59 @@ void main()
     
     private void FireWeapon()
     {
-        if (weapon == null || camera == null || !weapon.CanFire()) return;
+        if (camera == null) return;
         
-        // Trigger screenshake when firing
-        camera.TriggerScreenshake();
-        
-        // Spawn a projectile for the player's shot (projectile-based, not hitscan)
-        var projectile = projectiles.FirstOrDefault(p => !p.IsActive);
-        if (projectile != null)
+        if (currentWeaponIndex == 0)
         {
+            // Revolver
+            if (revolver == null || !revolver.CanShoot()) return;
+            
+            // Trigger recoil when firing revolver (strong recoil)
+            camera.TriggerRecoil(6.0f);
+            
+            // Spawn a projectile for the revolver shot
+            var projectile = projectiles.FirstOrDefault(p => !p.IsActive);
+            if (projectile != null)
+            {
+                Vector3 origin = camera.Position;
+                Vector3 direction = camera.GetForwardVector();
+                projectile.Fire(origin, direction, revolver.ProjectileSpeed, revolver.Damage, fromEnemy: false);
+                revolver.Shoot(); // Consume ammo and handle auto-reload
+            }
+            else
+            {
+                // Projectile pool exhausted - provide feedback
+                Console.WriteLine("[WARNING] Projectile pool exhausted! Cannot fire.");
+            }
+            
+            Console.WriteLine($"[{revolver.Name}] Fired! ({revolver.CurrentAmmo}/{revolver.MaxAmmo})");
+        }
+        else if (currentWeaponIndex == 1)
+        {
+            // Katana
+            if (katana == null) return;
+            
             Vector3 origin = camera.Position;
             Vector3 direction = camera.GetForwardVector();
-            projectile.Fire(origin, direction, 50f, weapon.Damage, fromEnemy: false);
+            
+            katana.Slash(origin, direction, enemies, (enemy) =>
+            {
+                enemy.TakeDamage(katana.Damage);
+                Console.WriteLine($"[Katana] Hit enemy for {katana.Damage} damage!");
+            });
+            
+            Console.WriteLine($"[{katana.Name}] Slashed!");
         }
-        else
+    }
+    
+    private void SelectWeapon(int index)
+    {
+        if (index != currentWeaponIndex)
         {
-            // Projectile pool exhausted - provide feedback
-            Console.WriteLine("[WARNING] Projectile pool exhausted! Cannot fire.");
+            currentWeaponIndex = index;
+            string weaponName = currentWeaponIndex == 0 ? revolver?.Name ?? "Revolver" : katana?.Name ?? "Katana";
+            Console.WriteLine($"Switched to {weaponName}");
         }
-        
-        Console.WriteLine($"[{weapon.Name}] Fired!");
     }
     
     private void FireEnemyProjectile(Enemy enemy)
@@ -1285,25 +1304,18 @@ void main()
         }
     }
     
-    private void CheckWaveCompletion(float deltaTime)
+    private void CheckBossDefeat(float deltaTime)
     {
-        // Check if all enemies are dead
-        if (enemies.Count == 0 || enemies.All(e => !e.IsAlive))
+        // Check if boss is defeated
+        if (enemies.Count > 0 && enemies.All(e => !e.IsAlive))
         {
-            waveTimer += deltaTime;
+            // Boss defeated!
+            Console.WriteLine("\n=== VICTORY! ===");
+            Console.WriteLine("You have defeated the boss!");
+            Console.WriteLine("Press F2 to spawn a new boss");
             
-            // Wait for delay before spawning next wave
-            if (waveTimer >= WAVE_DELAY)
-            {
-                // Clear dead enemies from list if any remain
-                if (enemies.Count > 0)
-                {
-                    enemies.RemoveAll(e => !e.IsAlive);
-                }
-                
-                // Spawn next wave with increased difficulty
-                SpawnWave(currentWave + 1);
-            }
+            // Clear the boss
+            enemies.Clear();
         }
     }
     

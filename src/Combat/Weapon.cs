@@ -40,13 +40,13 @@ public class Weapon
         
         if (direction.LengthSquared() < 0.0001f)
         {
-            throw new ArgumentException("Direction vector is too small", nameof(direction));
+            direction = Vector3.UnitZ;
+        }
+        else
+        {
+            direction = Vector3.Normalize(direction);
         }
         
-        if (onHit == null)
-        {
-            throw new ArgumentNullException(nameof(onHit));
-        }
         
         if (!CanFire()) return;
         
@@ -62,7 +62,7 @@ public class Weapon
         // Visual/audio feedback would go here
     }
     
-    public void Update(float deltaTime)
+    public virtual void Update(float deltaTime)
     {
         currentTime += deltaTime;
     }
