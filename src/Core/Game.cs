@@ -8,6 +8,7 @@ using FPSRoguelike.Rendering;
 using FPSRoguelike.Physics;
 using FPSRoguelike.Combat;
 using FPSRoguelike.Entities;
+using FPSRoguelike.UI;
 
 namespace FPSRoguelike.Core;
 
@@ -17,6 +18,8 @@ public class Game
     private GL gl;
     private InputSystem? inputSystem;
     private Renderer? renderer;
+    private SimpleUIManager? uiManager;
+    private bool showSettingsMenu = false;
     
     // Timing
     private double accumulator = 0.0;
@@ -118,9 +121,14 @@ public class Game
     
     // Player
     private PlayerHealth? playerHealth;
+    private int score = 0;
+    private double fps = 0;
+    private double fpsTimer = 0;
+    private int frameCount = 0;
     
     // UI
     private Crosshair? crosshair;
+    private HUD? hud;
     
     public Game(IWindow window, GL gl)
     {
@@ -154,8 +162,15 @@ public class Game
         // Initialize crosshair
         crosshair = new Crosshair(gl);
         
+        // Initialize HUD
+        hud = new HUD();
+        hud.Initialize(gl);
+        
         // Initialize player health
         playerHealth = new PlayerHealth(100f);
+        
+        // Initialize UI Manager
+        uiManager = new SimpleUIManager();
         
         // Initialize projectile pool
         for (int i = 0; i < MAX_PROJECTILES; i++)
@@ -188,8 +203,103 @@ public class Game
     
     public void Update(double deltaTime)
     {
-        // Poll input once per frame
+        // Update FPS counter
+        fpsTimer += deltaTime;
+        frameCount++;
+        if (fpsTimer >= 1.0)
+        {
+            fps = frameCount / fpsTimer;
+            frameCount = 0;
+            fpsTimer = 0;
+        }
+        
+        // Handle UI inputs BEFORE polling (check previous frame's state)
+        if (inputSystem?.IsKeyJustPressed(Key.Escape) == true)
+        {
+            if (uiManager?.IsPaused == true)
+            {
+                // If already paused and in menu, close menu or unpause
+                if (showSettingsMenu)
+                {
+                    showSettingsMenu = false;
+                }
+                else
+                {
+                    uiManager?.TogglePause();
+                }
+            }
+            else
+            {
+                // If not paused, pause and show menu
+                uiManager?.TogglePause();
+                showSettingsMenu = true;
+            }
+            Console.WriteLine($"ESC pressed - Paused: {uiManager?.IsPaused}, Menu: {showSettingsMenu}");
+        }
+        
+        // Handle menu navigation when paused
+        if (uiManager?.IsPaused == true && showSettingsMenu)
+        {
+            // Navigate menu with arrow keys
+            if (inputSystem?.IsKeyJustPressed(Key.Up) == true || inputSystem?.IsKeyJustPressed(Key.W) == true)
+            {
+                hud?.NavigateMenu(-1);
+            }
+            if (inputSystem?.IsKeyJustPressed(Key.Down) == true || inputSystem?.IsKeyJustPressed(Key.S) == true)
+            {
+                hud?.NavigateMenu(1);
+            }
+            
+            // Adjust settings with left/right arrows
+            if (inputSystem?.IsKeyJustPressed(Key.Left) == true || inputSystem?.IsKeyJustPressed(Key.A) == true)
+            {
+                hud?.AdjustSelectedSetting(-1);
+                // Apply settings if mouse sensitivity or FOV changed
+                if (hud != null && camera != null)
+                {
+                    camera.SetFieldOfView(hud.FieldOfView);
+                }
+            }
+            if (inputSystem?.IsKeyJustPressed(Key.Right) == true || inputSystem?.IsKeyJustPressed(Key.D) == true)
+            {
+                hud?.AdjustSelectedSetting(1);
+                // Apply settings if mouse sensitivity or FOV changed
+                if (hud != null && camera != null)
+                {
+                    camera.SetFieldOfView(hud.FieldOfView);
+                }
+            }
+            
+            // Select menu item with Enter
+            if (inputSystem?.IsKeyJustPressed(Key.Enter) == true || inputSystem?.IsKeyJustPressed(Key.Space) == true)
+            {
+                string? action = hud?.GetSelectedAction();
+                switch (action)
+                {
+                    case "Resume":
+                        uiManager?.TogglePause();
+                        showSettingsMenu = false;
+                        break;
+                    case "Exit Game":
+                        window.Close();
+                        break;
+                }
+            }
+        }
+        
+        if (inputSystem?.IsKeyJustPressed(Key.F1) == true)
+        {
+            uiManager?.ToggleDebugInfo();
+        }
+        
+        // Poll input for next frame
         inputSystem?.Poll();
+        
+        // Update UI
+        uiManager?.Update(deltaTime);
+        
+        // Don't update game logic if paused
+        if (uiManager?.IsPaused == true) return;
         
         accumulator += deltaTime;
         
@@ -197,6 +307,11 @@ public class Game
         if (inputSystem != null && camera != null)
         {
             Vector2 mouseDelta = inputSystem.GetMouseDelta();
+            
+            // Apply mouse sensitivity from HUD settings or UI settings
+            float sensitivity = hud?.MouseSensitivity ?? uiManager?.MouseSensitivity ?? 0.3f;
+            mouseDelta *= sensitivity;
+            
             camera.UpdateRotation(mouseDelta);
         }
         
@@ -210,11 +325,7 @@ public class Game
             updates++;
         }
         
-        // Check for exit
-        if (inputSystem?.IsKeyPressed(Key.Escape) == true)
-        {
-            window.Close();
-        }
+        // Exit handled via Alt+F4 or window close button
     }
     
     public void Render(double deltaTime)
@@ -226,8 +337,16 @@ public class Game
         // Render 3D scene
         RenderTestCube(interpolation);
         
-        // Render UI elements (crosshair)
-        crosshair?.Render(window.Size.X, window.Size.Y);
+        // Render UI elements
+        if (uiManager?.IsPaused != true)
+        {
+            // Crosshair is now part of HUD
+        }
+        
+        // Render HUD
+        int aliveEnemies = enemies.Count(e => e.IsAlive);
+        hud?.Render(playerHealth, weapon, score, currentWave, aliveEnemies, uiManager?.IsPaused ?? false, showSettingsMenu);
+        uiManager?.PrintHUD(playerHealth, weapon, score, currentWave, aliveEnemies, (float)fps);
     }
     
     private void UpdateGameLogic(double fixedDeltaTime)
@@ -487,9 +606,10 @@ void main()
         gl.UseProgram(shaderProgram);
         gl.BindVertexArray(vao);
         
-        // Update camera matrices
+        // Update camera matrices with FOV from UI settings
         float aspectRatio = (float)window.Size.X / window.Size.Y;
-        camera.UpdateMatrices(aspectRatio);
+        float fov = uiManager?.FieldOfView ?? 90f;
+        camera.UpdateMatrices(aspectRatio, fov);
         
         Matrix4x4 view = camera.ViewMatrix;
         Matrix4x4 projection = camera.ProjectionMatrix;
@@ -707,6 +827,7 @@ void main()
                         if (!enemy.IsAlive)
                         {
                             enemiesKilled++;
+                            score += 100;
                             Console.WriteLine($"Enemy destroyed! Total kills: {enemiesKilled}");
                         }
                         break;
@@ -743,6 +864,7 @@ void main()
                     if (!enemy.IsAlive)
                     {
                         enemiesKilled++;
+                        score += 150;
                         Console.WriteLine($"Enemy destroyed! Total kills: {enemiesKilled}");
                     }
                     

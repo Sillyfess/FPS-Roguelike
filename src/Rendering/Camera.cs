@@ -23,6 +23,11 @@ public class Camera
     public float NearPlane { get; set; } = DEFAULT_NEAR_PLANE;
     public float FarPlane { get; set; } = DEFAULT_FAR_PLANE;
     
+    public void SetFieldOfView(float fov)
+    {
+        FieldOfView = Math.Clamp(fov, 60f, 120f);
+    }
+    
     private float mouseSensitivity = DEFAULT_MOUSE_SENSITIVITY;
     private float maxPitch = MAX_PITCH_DEGREES * DEG_TO_RAD;
     
@@ -51,8 +56,14 @@ public class Camera
             Yaw += TWO_PI;
     }
     
-    public void UpdateMatrices(float aspectRatio)
+    public void UpdateMatrices(float aspectRatio, float? fov = null)
     {
+        // Update FOV if provided
+        if (fov.HasValue)
+        {
+            FieldOfView = fov.Value;
+        }
+        
         // Calculate forward vector from rotation
         Vector3 forward = GetForwardVector();
         
