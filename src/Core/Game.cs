@@ -26,6 +26,14 @@ public class Game
     private const double FIXED_TIMESTEP = 1.0 / 60.0;
     private const int MAX_UPDATES = 5;
     
+    // Hitstop constants
+    private const float HITSTOP_DURATION = 0.05f; // Brief 50ms pause
+    private const float HITSTOP_TIME_SCALE = 0.1f; // 10% speed for impact feel
+    
+    // Hitstop state
+    private float hitstopTime = 0f;
+    private bool isInHitstop = false;
+    
     // Test cube vertices - need 24 vertices (4 per face) for proper normals
     private readonly float[] vertices = 
     {
@@ -303,8 +311,8 @@ public class Game
         
         accumulator += deltaTime;
         
-        // Handle mouse look every frame (not in fixed timestep)
-        if (inputSystem != null && camera != null)
+        // Handle mouse look every frame (not in fixed timestep) - but disable during hitstop
+        if (inputSystem != null && camera != null && !isInHitstop)
         {
             Vector2 mouseDelta = inputSystem.GetMouseDelta();
             
@@ -335,7 +343,7 @@ public class Game
         double interpolation = accumulator / FIXED_TIMESTEP;
         
         // Render 3D scene
-        RenderTestCube(interpolation);
+        RenderTestCube(interpolation, deltaTime);
         
         // Render UI elements
         if (uiManager?.IsPaused != true)
@@ -354,7 +362,14 @@ public class Game
         if (inputSystem == null || camera == null || characterController == null || playerHealth == null) return;
         
         float dt = (float)fixedDeltaTime;
-        gameTime += dt; // Track total time for enemy attack cooldowns
+        
+        // Update hitstop timer (always at normal speed)
+        UpdateHitstop(dt);
+        
+        // Apply time scale during hitstop
+        float scaledDt = isInHitstop ? dt * HITSTOP_TIME_SCALE : dt;
+        
+        gameTime += scaledDt; // Track total time for enemy attack cooldowns
         
         // Update player health
         playerHealth.Update(dt);
@@ -389,35 +404,35 @@ public class Game
         // Handle jump input (use IsKeyPressed for fixed timestep)
         bool jumpPressed = inputSystem.IsKeyPressed(Key.Space);
         
-        // Update character controller with physics
-        characterController.Update(moveInput, jumpPressed, dt);
+        // Update character controller with physics (apply hitstop to movement too)
+        characterController.Update(moveInput, jumpPressed, scaledDt);
         
         // Update camera position to follow player (with eye height offset)
         camera.Position = characterController.Position;
         
-        // Update weapon
-        weapon?.Update(dt);
+        // Update weapon (use scaled time)
+        weapon?.Update(scaledDt);
         
-        // Handle shooting
-        if (inputSystem.IsMouseButtonPressed(MouseButton.Left))
+        // Handle shooting (disable during hitstop)
+        if (inputSystem.IsMouseButtonPressed(MouseButton.Left) && !isInHitstop)
         {
             FireWeapon();
         }
         
-        // Update enemies
-        UpdateEnemies(dt);
+        // Update enemies (use scaled time)
+        UpdateEnemies(scaledDt);
         
-        // Update projectiles
-        UpdateProjectiles(dt);
+        // Update projectiles (use scaled time)
+        UpdateProjectiles(scaledDt);
         
-        // Update hit markers
-        UpdateHitMarkers(dt);
+        // Update hit markers (use scaled time)
+        UpdateHitMarkers(scaledDt);
         
         // Check for wave completion
         CheckWaveCompletion();
         
-        // Update cube rotation for visual interest
-        rotation += dt * 50.0f;
+        // Update cube rotation for visual interest (use scaled time)
+        rotation += scaledDt * 50.0f;
         
         // Debug output
         if (inputSystem.IsKeyJustPressed(Key.F1))
@@ -599,7 +614,9 @@ void main()
         new Vector3(0, 2, -10),
     };
     
-    private void RenderTestCube(double interpolation)
+    private double lastRenderTime = 0;
+    
+    private void RenderTestCube(double interpolation, double renderDeltaTime)
     {
         if (camera == null) return;
         
@@ -609,6 +626,7 @@ void main()
         // Update camera matrices with FOV from UI settings
         float aspectRatio = (float)window.Size.X / window.Size.Y;
         float fov = uiManager?.FieldOfView ?? 90f;
+        camera.UpdateScreenshake((float)renderDeltaTime);
         camera.UpdateMatrices(aspectRatio, fov);
         
         Matrix4x4 view = camera.ViewMatrix;
@@ -748,6 +766,25 @@ void main()
         }
     }
     
+    private void TriggerHitstop()
+    {
+        hitstopTime = HITSTOP_DURATION;
+        isInHitstop = true;
+    }
+    
+    private void UpdateHitstop(float deltaTime)
+    {
+        if (hitstopTime > 0)
+        {
+            hitstopTime -= deltaTime;
+            if (hitstopTime <= 0)
+            {
+                hitstopTime = 0;
+                isInHitstop = false;
+            }
+        }
+    }
+    
     private void SpawnWave(int wave)
     {
         currentWave = wave;
@@ -824,6 +861,9 @@ void main()
                         enemy.TakeDamage(weapon?.Damage ?? 10f);
                         projectile.Deactivate();
                         
+                        // Trigger hitstop on enemy hit
+                        TriggerHitstop();
+                        
                         if (!enemy.IsAlive)
                         {
                             enemiesKilled++;
@@ -841,48 +881,16 @@ void main()
     {
         if (weapon == null || camera == null || !weapon.CanFire()) return;
         
-        // Prioritize hitting enemies over environment
-        bool hitEnemy = false;
-        foreach (var enemy in enemies)
-        {
-            if (!enemy.IsActive) continue;
-            
-            // Ray-sphere intersection test for enemy hitbox
-            Vector3 toEnemy = enemy.Position - camera.Position;
-            float projLength = Vector3.Dot(toEnemy, camera.GetForwardVector());
-            
-            if (projLength > 0 && projLength < weapon.Range)
-            {
-                Vector3 closestPoint = camera.Position + camera.GetForwardVector() * projLength;
-                float distance = Vector3.Distance(closestPoint, enemy.Position);
-                
-                if (distance <= 1.5f) // Enemy hitbox radius
-                {
-                    enemy.TakeDamage(weapon.Damage);
-                    hitMarkers.Add((enemy.Position, HIT_MARKER_DURATION)); // Visual feedback
-                    
-                    if (!enemy.IsAlive)
-                    {
-                        enemiesKilled++;
-                        score += 150;
-                        Console.WriteLine($"Enemy destroyed! Total kills: {enemiesKilled}");
-                    }
-                    
-                    hitEnemy = true;
-                    break;
-                }
-            }
-        }
+        // Trigger screenshake when firing
+        camera.TriggerScreenshake();
         
-        // If no enemy hit, check cubes
-        if (!hitEnemy)
+        // Spawn a projectile for the player's shot (projectile-based, not hitscan)
+        var projectile = projectiles.FirstOrDefault(p => !p.IsActive);
+        if (projectile != null)
         {
-            weapon.Fire(
-                camera.Position,
-                camera.GetForwardVector(),
-                hit => OnWeaponHit(hit),
-                destroyedCubes
-            );
+            Vector3 origin = camera.Position;
+            Vector3 direction = camera.GetForwardVector();
+            projectile.Fire(origin, direction, 50f, weapon.Damage, fromEnemy: false);
         }
         
         Console.WriteLine($"[{weapon.Name}] Fired!");

@@ -14,22 +14,241 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
 
 ## Critical Issues
 
-### 1. No TODO/FIXME Comments Found
+### 1. No TODO/FIXME Comments Found ✅ CONFIRMED
 - **Location**: Throughout codebase
-- **Issue**: No TODO or FIXME comments exist, suggesting incomplete tracking of known issues
-- **Impact**: Development debt may be hidden
+- **Issue**: No TODO or FIXME comments exist in source code (only in git hooks)
+- **Impact**: Development debt tracked in ISSUES.md instead (per CODE_STANDARDS.md)
 
-## Remaining High Priority Issues
+## Unsafe Code Usage
+
+### Extensive Use of Unsafe Blocks
+1. **HUD.cs** - 6 unsafe blocks for OpenGL operations
+2. **Game.cs** - 4 unsafe blocks
+3. **Crosshair.cs** - 1 unsafe block
+4. **No safety validation** - Pointers passed without bounds checking
+5. **Risk**: Buffer overruns, crashes if arrays are smaller than expected
+
+## Error Handling Gaps
+
+### Only InputSystem Has Try-Catch
+1. **No error handling in:**
+   - OpenGL operations (shader compilation/linking)
+   - File operations
+   - Mathematical operations (sqrt, division)
+   - Array access operations
+
+2. **Shader Compilation Not Checked**
+   - HUD.cs, Game.cs, Crosshair.cs create shaders
+   - No glGetShaderiv to check compilation status
+   - No glGetShaderInfoLog for error messages
+   - App will crash/render incorrectly on shader errors
+
+3. **Null Reference Risks**
+   - Extensive use of null-conditional operators (?.) suggests instability
+   - Game.cs has 14+ null checks in critical paths
+   - No clear initialization guarantees
+
+## Disposal Chain Broken
+
+### Resources Not Properly Disposed
+1. **Program.cs**:
+   - Only calls Game.Cleanup() on window close
+   - Doesn't call InputSystem.Dispose()
+   - No disposal of HUD resources
+
+2. **Missing IDisposable**:
+   - Game class (has Cleanup but not IDisposable)
+   - Renderer class (empty Cleanup method)
+   - HUD class (has Cleanup but never called)
+   - Crosshair class (has Cleanup but not IDisposable)
+
+3. **OpenGL Resources Leaked**:
+   - VAOs, VBOs, EBOs, Shaders created but not always freed
+   - No using statements or try-finally blocks
+
+## Additional Architecture Issues
+
+### Projectile System Issues
+1. **No parameter validation in Fire()**
+   - Direction vector not normalized/validated
+   - Speed/damage not validated for reasonable ranges
+   - Could accept NaN/Infinity values
+
+2. **Collision Detection Inefficiency**
+   - CheckCollision called for every projectile vs every target every frame
+   - No spatial partitioning or broad phase detection
+   - O(n*m) complexity for n projectiles and m targets
+
+### SimpleUIManager Issues
+1. **Console Output in Production**
+   - Line 28: Console.WriteLine for pause state
+   - Lines 41-43: Console cursor manipulation and writes
+   - Should use proper logging system
+
+2. **Hardcoded Settings**
+   - Mouse sensitivity: 0.3f (line 11)
+   - FOV: 90f (line 12)
+   - No persistence mechanism
+
+### Renderer Issues
+1. **Console Output Still Present**
+   - Line 27: Initialization message to console
+   - Should use ILogger
+
+2. **Null-Conditional Operators Everywhere**
+   - gl?.Viewport, gl?.ClearColor, gl?.Clear
+   - Suggests gl could be null during normal operation
+   - Should guarantee initialization or throw
+
+### CharacterController Issues
+1. **No Input Validation**
+   - moveInput not validated (could be huge vectors)
+   - deltaTime not validated (could be negative)
+   - No bounds checking on position
+
+2. **Floating Point Comparisons**
+   - Line 46: Direct comparison with groundLevel
+   - Should use epsilon for stability
+
+### Enemy AI Issues
+1. **Static ID Counter Not Thread-Safe**
+   - Line 75: `static int nextId = 0`
+   - Line 79: `Id = nextId++` without synchronization
+   - Could result in duplicate IDs if enemies created concurrently
+
+2. **Performance Issues**
+   - Vector3.Distance used frequently (expensive sqrt)
+   - Could use DistanceSquared for comparisons
+   - Normalize operations could be cached
+
+## Additional Issues Found (Deep Scan)
+
+### New UI System Discovered
+1. **ImGui Integration** (UIManager.cs)
+   - Adds significant dependency (ImGuiNET)
+   - Not mentioned in documentation
+   - Has settings that should persist (FOV, sensitivity, volumes)
+   - No settings persistence/loading mechanism
+
+### Resource Disposal Issues
+1. **Incomplete Disposal Pattern**
+   - Game.cs: Has Cleanup() but doesn't implement IDisposable
+   - Renderer.cs: Empty Cleanup() method
+   - OpenGL resources (VAO, VBO, shaders) only cleaned in Game.Cleanup()
+   - No finalizers for safety
+
+2. **UIManager Disposal**
+   - Implements IDisposable correctly
+   - But Game.cs doesn't call Dispose() on it
+
+### Console Output Still Present
+1. **Debug Messages Remain**
+   - UIManager.cs: 8 Console.WriteLine calls (lines 368-375)
+   - Renderer.cs: Initialization message
+   - Crosshair.cs: Shader compilation messages
+   - Should use ILogger interface instead
+
+### Hardcoded Configuration
+1. **Window Settings**
+   - Resolution hardcoded to 1280x720 (Program.cs:20)
+   - No fullscreen option
+   - No resolution changing
+
+2. **UI Settings Not Persistent**
+   - FOV changes lost on restart
+   - Mouse sensitivity not saved
+   - Volume settings not preserved
+
+3. **Graphics Settings**
+   - Quality levels defined but not used
+   - VSync toggle exists but may not apply
+
+### Accessibility Issues
+1. **No Key Rebinding**
+   - All controls hardcoded
+   - No controller support
+   - No alternative input methods
+
+2. **No Visual Accessibility**
+   - No colorblind modes
+   - Fixed crosshair color (green)
+   - No UI scaling options
+
+3. **No Audio Cues**
+   - Volume sliders exist but no audio system
+   - No audio feedback for actions
+
+### Error Recovery Issues
+1. **No Graceful Degradation**
+   - If OpenGL context fails, app crashes
+   - No fallback renderer
+   - No error messages to user
+
+2. **Input System Errors**
+   - Catches exceptions but only logs to console
+   - No user notification of input failures
+   - No recovery mechanism
+
+## New Issues Found During Deep Scan
+
+### Pause Functionality Added (HUD.cs update detected)
+- HUD.cs now includes pause rendering (lines 120-135)
+- isPaused parameter added to Render method
+- SimpleUIManager has pause toggle but no input binding found
+
+### HUD.cs - Previously Undocumented Component
+1. **Resource Management Issues**
+   - Creates OpenGL resources (VAO, VBO, EBO, shaders) but no IDisposable pattern
+   - Has Cleanup() method but not called anywhere
+   - Memory leak: quadEBO created but never stored/deleted (line 73)
+
+2. **Hardcoded UI Values**
+   - Magic numbers in shader code (0.1, 0.5, 0.3, etc.)
+   - Fixed crosshair thickness values (0.002f, 0.003f, 0.004f, 0.006f)
+   - Hardcoded colors in fragment shader
+   - Border thickness hardcoded to 0.005f
+
+3. **No Error Handling**
+   - Shader compilation not checked for errors
+   - Shader linking not verified
+   - GetUniformLocation calls could return -1 (not checked)
+
+4. **Performance Issues**
+   - GetUniformLocation called every frame in DrawQuad (lines 197-198)
+   - Should cache uniform locations at initialization
+
+5. **Division by Zero Risk**
+   - Line 125: `playerHealth.Health / playerHealth.MaxHealth` - no check if MaxHealth is 0
+
+## New Issues Found (Post-Refactor Analysis)
+
+### Architectural Issues
+
+1. **Game.cs is too large** (817 lines)
+   - Violates single responsibility principle
+   - Handles rendering, game logic, input, enemy spawning, etc.
+   - Should be split into: GameManager, WaveManager, CollisionSystem, etc.
+
+2. **Tight Coupling Between Systems**
+   - Weapon.cs has hardcoded cube positions instead of entity queries
+   - Game.cs directly manages all subsystems
+   - No dependency injection or interfaces for major systems
+
+### Missing Input Validation
+
+1. **Public Methods Lack Parameter Validation**
+   - `Projectile.Fire()` - no validation of direction vector
+   - `Camera.UpdateRotation()` - no bounds check on delta
+   - `Enemy` constructor - no validation of health parameter
+   - `Weapon.Fire()` - no null check on onHit callback
+
+2. **No Bounds Checking**
+   - Enemy positions can go infinite
+   - Projectile positions unbounded
+   - No arena/world bounds enforcement
 
 ### 1. ~~Extensive Magic Numbers~~ ✅ FIXED
 - All magic numbers have been extracted to named constants
-- Examples of fixes:
-  - Enemy.cs: `DEFAULT_MOVE_SPEED`, `DEFAULT_ATTACK_RANGE`, etc.
-  - PlayerHealth.cs: `DEFAULT_REGEN_DELAY`, `DEFAULT_MAX_HEALTH`
-  - CharacterController.cs: `DEFAULT_GRAVITY`, `JUMP_VELOCITY_MULTIPLIER`
-  - Camera.cs: `MAX_PITCH_DEGREES`, `TWO_PI`
-  - Weapon.cs: `CUBE_HIT_RADIUS`
-  - Game.cs: `HIT_MARKER_DURATION`, `MAX_PROJECTILES`
 
 ### 2. Resource Management Issues (Partially Fixed)
 - **Status**: InputSystem ✅ FIXED (now implements IDisposable)
@@ -51,13 +270,22 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
 - InputSystem now uses lock objects for thread safety
 - Enemy.cs uses a shared static Random instance with proper locking
 
-### 2. Performance Issues (Mostly Fixed)
-- **Fixed**:
-  - Enemy.cs: ✅ Now uses shared Random instance
-  - InputSystem: ✅ Mouse delta clamped to prevent overflow
-- **Still Present**:
-  - `Weapon.cs`: Hardcoded array allocation in raycast method
-  - Multiple Vector3 normalizations that could be cached
+### 2. Performance Concerns
+
+#### Memory Allocations in Hot Paths
+- `Weapon.cs:53`: Creates new Vector3 array every raycast
+- `InputSystem.cs:56-57`: Creates new HashSet copies every poll
+- `Game.cs`: Multiple foreach loops over all enemies/projectiles every frame
+
+#### Inefficient Collision Detection
+- O(n²) collision checks between projectiles and enemies
+- No spatial partitioning (quadtree/octree)
+- Every projectile checks every enemy every frame
+
+#### Rendering Inefficiencies
+- Individual draw calls per cube (no instancing)
+- No frustum culling
+- No LOD system
 
 ### 3. Architecture Issues
 - **Location**: Overall design
@@ -77,17 +305,13 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
 
 ## Low Priority Issues
 
-### 1. Inconsistent Naming
-- **Location**: Various
-- **Issue**: Mix of naming conventions
-- **Examples**:
-  - Constants: Some use UPPER_CASE, others use PascalCase
-  - Private fields: Some use camelCase, others don't
+### 1. ~~Inconsistent Naming~~ ✅ FIXED
+- Now follows consistent conventions per CODE_STANDARDS.md
 
-### 2. Missing Documentation
-- **Location**: All classes
-- **Issue**: No XML documentation comments for public APIs
-- **Impact**: Harder for team collaboration and API understanding
+### 2. ~~Missing Documentation~~ ✅ MOSTLY FIXED
+- Most public APIs now have XML documentation
+- UIManager.cs lacks documentation
+- Some newer additions still need docs
 
 ### 3. ~~Console Output in Production Code~~ ✅ FIXED
 - All debug Console.WriteLine statements have been removed
@@ -102,22 +326,76 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
 
 ## Potential Bugs
 
-### 1. Floating Point Precision
-- **Location**: `Enemy.cs`, `CharacterController.cs`
-- **Issue**: Direct floating point comparisons without epsilon
+### 1. Floating Point Precision Issues Remain
+- Direct comparisons without epsilon still exist:
+  - `Enemy.cs`: `Position.Y > GROUND_LEVEL` (should use epsilon)
+  - `CharacterController.cs`: Ground detection
+  - Could cause jittering at boundaries
+
+### 2. Race Conditions in Enemy State
+- Enemy state can be modified from multiple sources
+- No validation that enemy is still alive before state changes
+- Could result in dead enemies attacking
+
+### 3. ~~Input Accumulation~~ ✅ FIXED
+- Mouse delta now clamped to prevent overflow
+
+### 4. Configuration Management Missing
+- No settings file (JSON/XML)
+- No persistent user preferences
+- No config validation
+- Hardcoded defaults everywhere
+
+### 5. Logging System Incomplete
+- ILogger interface exists but unused
+- Console.WriteLine still present
+- No log levels in actual use
+- No file logging option
+
+### 6. Test Cube Positions Hardcoded
+- **Location**: Game.cs lines 529-532, Weapon.cs lines 60-63
+- **Issue**: Duplicate hardcoded test positions instead of proper level/entity system
+- **Impact**: Not using entity system, violates DRY principle
+
+### 7. Shader Code Contains Magic Numbers
+- **Location**: Game.cs (vertex/fragment shaders), Crosshair.cs, HUD.cs
 - **Examples**:
-  - `Enemy.cs` line 108-115: Direct comparison `Position.Y > 1f`
-  - Could cause jittering or missed conditions
+  - Ambient strength: 0.4
+  - Specular intensity: 0.3  
+  - Specular power: 32
+  - Light direction: vec3(-0.5, -1.0, -0.3)
+  - Object color: vec3(0.5, 0.6, 0.7)
 
-### 2. State Management
-- **Location**: `Enemy.cs`
-- **Issue**: State transitions don't validate current state
-- **Risk**: Could transition from Dead state back to other states
+### 8. Memory Allocations in Update Loops
+- **InputSystem.cs lines 56-57**: Creates new HashSet copies every poll
+- **Weapon.cs line 53**: Creates new Vector3 array every raycast
+- **Impact**: GC pressure in hot paths
 
-### 3. Input Accumulation
-- **Location**: `InputSystem.cs`
-- **Issue**: Mouse delta accumulation could overflow with high DPI mice
-- **Line**: 109 - No bounds checking on accumulated delta
+### 9. Score System Hardcoded
+- **Game.cs lines 764, 801**: Fixed score values (100, 150)
+- **No score multipliers or progression**
+- **Should be configurable or calculated**
+
+### 10. Window Configuration Hardcoded
+- **Program.cs line 20**: Fixed 1280x720 resolution
+- **Program.cs line 25**: VSync hardcoded to false
+- **No config file or command-line args**
+
+### 11. Missing Bounds Validation
+- **No world boundaries** - entities can go to infinity
+- **No arena limits** - projectiles fly forever
+- **CharacterController** - no position clamping
+- **Memory risk** - unbounded position values
+- **InputSystem.cs lines 56-57**: Creates new HashSet copies every poll
+- **Weapon.cs line 53**: Creates new Vector3 array every raycast
+- **Impact**: GC pressure in hot paths
+- **Location**: Game.cs (vertex/fragment shaders), Crosshair.cs, HUD.cs
+- **Examples**:
+  - Ambient strength: 0.4
+  - Specular intensity: 0.3
+  - Specular power: 32
+  - Light direction: vec3(-0.5, -1.0, -0.3)
+  - Object color: vec3(0.5, 0.6, 0.7)
 
 ### 4. ~~Division by Zero Risk~~ ✅ FIXED
 - PlayerHealth.HealthPercentage now includes null check:
@@ -148,7 +426,8 @@ This document tracks remaining technical debt in the FPS Roguelike codebase. Man
 
 ### Original Issues Found: 35+
 ### Issues Fixed: 15+ ✅
-### Remaining Issues: ~10
+### New Issues Found: 20+
+### Total Remaining Issues: ~35+
 
 **Fixed Categories:**
 - Magic Numbers: COMPLETELY FIXED ✅

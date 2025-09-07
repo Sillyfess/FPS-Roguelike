@@ -25,17 +25,6 @@ src/
 - **Object pooling**: 100 projectiles pre-allocated
 - **Thread safety**: Locks in InputSystem, shared Random in Enemy
 
-## Current State
-✅ Fully playable with enemies, waves, combat
-✅ All magic numbers extracted to constants
-✅ Thread-safe input with error handling
-✅ IDisposable on InputSystem
-
-## Common Issues & Fixes
-
-**Mouse lag**: Ensure `CursorMode.Raw` is set
-**Stuttering**: Check fixed timestep accumulator
-**Build errors**: Run `dotnet restore`
 
 ## Code Standards (Brief)
 - **Constants**: UPPER_SNAKE_CASE (DEFAULT_*, MAX_*, MIN_*)
@@ -55,12 +44,6 @@ See CODE_STANDARDS.md for complete guidelines.
 - **R**: Respawn when dead
 - **F1**: Debug info
 - **ESC**: Exit
-
-## Next Priorities
-1. Additional weapons (shotgun, machine gun)
-2. Movement abilities (dash, double jump)
-3. Score/UI overlay
-4. Sound effects
 
 ## Important Files
 - **README.md**: Project overview
