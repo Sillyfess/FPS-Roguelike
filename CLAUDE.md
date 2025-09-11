@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Run Commands
 ```bash
-# Build the project
+# Build the main project
 dotnet build FPSRoguelike.csproj
 
 # Run the game
@@ -12,7 +12,32 @@ dotnet run --project FPSRoguelike.csproj
 
 # Clean build artifacts
 dotnet clean
+
+# Build with specific configuration
+dotnet build -c Release
+
+# Run with verbose output for debugging
+dotnet run --project FPSRoguelike.csproj -v detailed
 ```
+
+## Project Files
+- **FPSRoguelike.csproj**: Main game project
+- **FPSGolfed.csproj**: Code golf version (minimal implementation)
+- **FPSOptimal.csproj**: Performance-optimized version
+- **FPSPlayable.csproj**: Stable playable build
+- **G.csproj**: Experimental/test configuration
+
+## Requirements
+- **.NET SDK**: 9.0.305 or later (specified in global.json)
+- **Platform**: Windows (primary), cross-platform possible
+- **Graphics**: OpenGL 3.3+ compatible
+
+## Testing
+**Note**: No unit test framework currently configured. All testing is manual playtesting.
+To add tests in the future:
+1. Add test framework package (e.g., NUnit or xUnit)
+2. Create test project in tests/ directory
+3. Follow test naming convention in CODE_STANDARDS.md
 
 ## High-Level Architecture
 
@@ -119,7 +144,7 @@ src/
 
 ### Known Issues (see ISSUES.md for full list)
 - **Resource disposal**: Some OpenGL resources in Renderer not properly cleaned
-- **Settings persistence**: User preferences lost on restart (Settings.cs exists but not persisted)
+- **Settings persistence**: Settings.cs has Save()/Load() methods but Save() not called on changes
 - **Console output**: SimpleUIManager still uses Console.WriteLine
 - **Unsafe blocks**: Extensive use without bounds checking in rendering code
 
