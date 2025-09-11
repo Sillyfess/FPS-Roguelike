@@ -29,6 +29,11 @@ public interface IPlayerSystem : IGameSystem
     int Score { get; }
     
     /// <summary>
+    /// Get the player's current aim direction (camera forward vector)
+    /// </summary>
+    Vector3 GetAimDirection();
+    
+    /// <summary>
     /// Add to player score
     /// </summary>
     void AddScore(int points);

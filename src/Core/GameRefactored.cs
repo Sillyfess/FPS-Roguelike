@@ -62,13 +62,9 @@ public class GameRefactored : IDisposable
         collisionSystem = new CollisionSystem();
         stateManager = new GameStateManager();
         
-        // Create systems with proper dependency injection
-        // First create weapon system without player system
-        weaponSystem = new WeaponSystem(entityManager, collisionSystem, null!, gl);
-        // Then create player system with weapon system
+        // Create systems with proper dependency injection (no circular dependencies)
+        weaponSystem = new WeaponSystem(entityManager, collisionSystem, gl);
         playerSystem = new PlayerSystem(inputSystem, entityManager, weaponSystem);
-        // Finally set the player system reference in weapon system
-        ((WeaponSystem)weaponSystem).SetPlayerSystem(playerSystem);
         
         waveManager = new WaveManager(entityManager);
         renderingSystem = new RenderingSystem();
@@ -327,7 +323,7 @@ public class GameRefactored : IDisposable
             var proj = Matrix4x4.CreatePerspectiveFieldOfView(
                 fov * MathF.PI / 180f, aspect, 0.1f, 1000f);
             
-            ws.RenderEffects(view, proj);
+            ws.RenderEffects(ps.Position, view, proj);
         }
     }
     
@@ -482,15 +478,5 @@ public class GameRefactored : IDisposable
         collisionSystem?.Dispose();
         entityManager?.Dispose();
         inputSystem?.Dispose();
-    }
-}
-
-// Extension to PlayerSystem to set weapon system after construction
-public static class PlayerSystemExtensions
-{
-    public static void SetWeaponSystem(this PlayerSystem playerSystem, IWeaponSystem weaponSystem)
-    {
-        // This would be implemented in PlayerSystem to resolve the circular dependency
-        // For now, this is a placeholder
     }
 }

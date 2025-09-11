@@ -14,7 +14,6 @@ public class WeaponSystem : IWeaponSystem
     // Dependencies
     private readonly IEntityManager entityManager;
     private readonly ICollisionSystem collisionSystem;
-    private IPlayerSystem? playerSystem;
     
     // Weapons
     private readonly List<Weapon> weapons = new();
@@ -32,12 +31,10 @@ public class WeaponSystem : IWeaponSystem
     public int CurrentWeaponIndex => currentWeaponIndex;
     public int WeaponCount => weapons.Count;
     
-    public WeaponSystem(IEntityManager entityManager, ICollisionSystem collisionSystem, 
-                       IPlayerSystem? playerSystem, GL? gl = null)
+    public WeaponSystem(IEntityManager entityManager, ICollisionSystem collisionSystem, GL? gl = null)
     {
         this.entityManager = entityManager;
         this.collisionSystem = collisionSystem;
-        this.playerSystem = playerSystem;
         
         // Initialize weapons
         revolver = new Revolver();
@@ -80,7 +77,7 @@ public class WeaponSystem : IWeaponSystem
         }
     }
     
-    public bool TryFire()
+    public bool TryFire(Vector3 position, Vector3 aimDirection)
     {
         var weapon = CurrentWeapon;
         if (weapon == null || !weapon.CanFire())
@@ -88,15 +85,13 @@ public class WeaponSystem : IWeaponSystem
             return false;
         }
         
-        Vector3 playerPos = playerSystem.Position;
-        
         if (weapon is Katana)
         {
             // Melee attack
             weapon.UpdateFireTiming();
             
             // Find enemies in melee range
-            var nearbyEnemies = entityManager.GetEnemiesInRange(playerPos, 3f);
+            var nearbyEnemies = entityManager.GetEnemiesInRange(position, 3f);
             
             foreach (var enemy in nearbyEnemies)
             {
@@ -110,19 +105,13 @@ public class WeaponSystem : IWeaponSystem
         }
         else if (weapon is Revolver || weapon is SMG)
         {
-            // Ranged attack
-            // Get camera forward direction (this should come from camera system)
-            // For now, we'll need to pass this in or get it from somewhere
-            
-            // This is a simplified implementation - in practice, you'd get the actual aim direction
-            Vector3 forward = new Vector3(0, 0, 1); // Placeholder
-            
+            // Ranged attack - use provided aim direction
             weapon.UpdateFireTiming();
             
             // Fire projectile
             entityManager.FireProjectile(
-                playerPos,
-                forward,
+                position,
+                aimDirection,
                 50f, // Projectile speed
                 weapon.Damage,
                 null
@@ -171,26 +160,18 @@ public class WeaponSystem : IWeaponSystem
     /// <summary>
     /// Render weapon effects (like slash)
     /// </summary>
-    public void RenderEffects(Matrix4x4 viewMatrix, Matrix4x4 projMatrix)
+    public void RenderEffects(Vector3 playerPosition, Matrix4x4 viewMatrix, Matrix4x4 projMatrix)
     {
-        if (playerSystem != null && slashEffect != null)
+        if (slashEffect != null)
         {
             // Create slash arc points
             Vector3[] slashPoints = new Vector3[] 
             { 
-                playerSystem.Position + Vector3.UnitX,
-                playerSystem.Position + Vector3.UnitZ 
+                playerPosition + Vector3.UnitX,
+                playerPosition + Vector3.UnitZ 
             };
             float progress = 1.0f; // Full slash
             slashEffect.Render(slashPoints, progress, viewMatrix, projMatrix);
         }
-    }
-    
-    /// <summary>
-    /// Set the player system reference after construction
-    /// </summary>
-    public void SetPlayerSystem(IPlayerSystem player)
-    {
-        playerSystem = player;
     }
 }

@@ -134,7 +134,7 @@ public class PlayerSystem : IPlayerSystem
         
         // Handle firing
         if (inputSystem.IsMouseButtonPressed(MouseButton.Left))
-            weaponSystem.TryFire();
+            weaponSystem?.TryFire(Position, GetAimDirection());
     }
     
     public void UpdateCameraRotation(Vector2 mouseDelta, float sensitivity)
@@ -142,6 +142,12 @@ public class PlayerSystem : IPlayerSystem
         // Apply mouse sensitivity
         mouseDelta *= sensitivity;
         camera.UpdateRotation(mouseDelta);
+    }
+    
+    public Vector3 GetAimDirection()
+    {
+        // Return the camera's forward vector for aiming
+        return camera.GetForwardVector();
     }
     
     public void AddScore(int points)

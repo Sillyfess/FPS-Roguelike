@@ -1,3 +1,4 @@
+using System.Numerics;
 using FPSRoguelike.Combat;
 
 namespace FPSRoguelike.Systems.Interfaces;
@@ -25,7 +26,9 @@ public interface IWeaponSystem : IGameSystem
     /// <summary>
     /// Try to fire current weapon
     /// </summary>
-    bool TryFire();
+    /// <param name="position">Position to fire from</param>
+    /// <param name="aimDirection">Direction to fire in</param>
+    bool TryFire(Vector3 position, Vector3 aimDirection);
     
     /// <summary>
     /// Reload current weapon if applicable
