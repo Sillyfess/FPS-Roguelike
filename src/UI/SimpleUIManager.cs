@@ -14,8 +14,16 @@ public class SimpleUIManager
     
     public bool IsPaused => isPaused;
     public bool IsMenuOpen => isPaused;
-    public float MouseSensitivity => mouseSensitivity;
-    public float FieldOfView => fov;
+    public float MouseSensitivity 
+    { 
+        get => mouseSensitivity;
+        set => mouseSensitivity = value;
+    }
+    public float FieldOfView 
+    { 
+        get => fov;
+        set => fov = value;
+    }
     
     public void Update(double deltaTime)
     {

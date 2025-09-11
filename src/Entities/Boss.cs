@@ -131,7 +131,7 @@ public class Boss : Enemy
         lastChargeTime = (float)DateTime.Now.Subtract(DateTime.UnixEpoch).TotalSeconds;
         hasDealtChargeDamage = false;
         
-        Console.WriteLine($"[BOSS] CHARGING!");
+        // Boss charging
     }
     
     // Boss never uses ranged attacks

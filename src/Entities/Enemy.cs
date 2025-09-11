@@ -485,7 +485,7 @@ public class Enemy
         lastChargeTime = (float)DateTime.Now.Subtract(DateTime.UnixEpoch).TotalSeconds;
         hasDealtChargeDamage = false;
         
-        Console.WriteLine($"[Enemy {Id}] Initiating charge!");
+        // Initiating charge
     }
     
     public bool IsCharging => currentState == EnemyState.Charging;

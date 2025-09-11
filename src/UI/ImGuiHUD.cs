@@ -466,6 +466,11 @@ public class ImGuiHUD
         showDebugInfo = !showDebugInfo;
     }
     
+    public bool IsDebugInfoVisible()
+    {
+        return showDebugInfo;
+    }
+    
     private bool shouldCloseSettings = false;
     
     public bool ShouldCloseSettings()

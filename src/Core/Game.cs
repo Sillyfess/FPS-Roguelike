@@ -30,6 +30,9 @@ public class Game : IDisposable
     private LevelEditor? levelEditor;
     private bool editorMode = false;
     
+    // Settings
+    private Settings? settings;
+    
     // ImGui
     private ImGuiWrapper? imGuiController;
     
@@ -163,6 +166,9 @@ public class Game : IDisposable
     
     public void Initialize()
     {
+        // Load settings
+        settings = Settings.Load();
+        
         // Initialize OpenGL settings
         gl.Enable(EnableCap.DepthTest);
         gl.ClearColor(0.1f, 0.1f, 0.2f, 1.0f);
@@ -207,6 +213,17 @@ public class Game : IDisposable
         
         // Initialize UI Manager
         uiManager = new SimpleUIManager();
+        
+        // Apply loaded settings to UI
+        if (settings != null && uiManager != null)
+        {
+            uiManager.FieldOfView = settings.FieldOfView;
+            uiManager.MouseSensitivity = settings.MouseSensitivity;
+            if (settings.ShowDebugInfo && imGuiHud != null)
+            {
+                imGuiHud.ToggleDebugInfo();
+            }
+        }
         
         // Initialize projectile pool
         for (int i = 0; i < MAX_PROJECTILES; i++)
@@ -462,6 +479,16 @@ public class Game : IDisposable
         if (showSettingsMenu && imGuiHud?.ShouldCloseSettings() == true)
         {
             showSettingsMenu = false;
+            
+            // Save settings when closing menu
+            if (settings != null && uiManager != null)
+            {
+                settings.FieldOfView = uiManager.FieldOfView;
+                settings.MouseSensitivity = uiManager.MouseSensitivity;
+                settings.ShowDebugInfo = imGuiHud?.IsDebugInfoVisible() ?? false;
+                settings.Save();
+            }
+            
             uiManager?.TogglePause();
             inputSystem?.SetCursorMode(CursorMode.Raw); // Hide cursor for gameplay
             Console.WriteLine("Resume button clicked - Closing settings menu");
@@ -1297,7 +1324,7 @@ void main()
                     // Screenshake for impact
                     camera.TriggerScreenshake();
                     
-                    Console.WriteLine($"[Enemy {enemy.Id}] Charge hit player for {enemy.GetChargeDamage()} damage!");
+                    // Charge hit player
                 }
             }
             
@@ -1318,7 +1345,7 @@ void main()
                     // Screenshake for melee hit
                     camera.TriggerScreenshake();
                     
-                    Console.WriteLine($"[BOSS] Melee attack hit player for {boss.GetMeleeDamage()} damage!");
+                    // Boss melee attack hit player
                 }
             }
             
@@ -1534,12 +1561,12 @@ void main()
             Vector3 direction = enemy.GetAttackDirection();
             
             projectile.Fire(origin, direction, enemy.GetProjectileSpeed(), enemy.GetDamage(), true);
-            Console.WriteLine($"Enemy {enemy.Id} fired projectile!");
+            // Enemy fired projectile
         }
         else
         {
             // Pool exhausted - enemy can't fire
-            Console.WriteLine($"Enemy {enemy.Id} couldn't fire - projectile pool exhausted!");
+            // Enemy couldn't fire - projectile pool exhausted
         }
     }
     
