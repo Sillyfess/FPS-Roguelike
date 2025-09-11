@@ -12,10 +12,33 @@ public class SlashEffect : IDisposable
     private const int MAX_POINTS = 32;
     private float[] vertices = new float[MAX_POINTS * 3];
     
+    private bool isActive = false;
+    private float effectTimer = 0f;
+    private const float EFFECT_DURATION = 0.2f;
+    
     public SlashEffect(GL glContext)
     {
         gl = glContext;
         SetupSlashEffect();
+    }
+    
+    public void Update(float deltaTime)
+    {
+        if (isActive)
+        {
+            effectTimer += deltaTime;
+            if (effectTimer >= EFFECT_DURATION)
+            {
+                isActive = false;
+                effectTimer = 0f;
+            }
+        }
+    }
+    
+    public void Trigger()
+    {
+        isActive = true;
+        effectTimer = 0f;
     }
     
     private void SetupSlashEffect()

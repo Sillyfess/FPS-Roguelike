@@ -47,4 +47,9 @@ public class SimpleUIManager
         // HUD is now rendered by ImGuiHUD using Dear ImGui
         // This method kept for compatibility but no longer outputs to console
     }
+    
+    public void Dispose()
+    {
+        // No resources to dispose
+    }
 }

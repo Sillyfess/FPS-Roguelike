@@ -49,6 +49,22 @@ public class Camera
         Yaw = 0f;
     }
     
+    public Matrix4x4 GetViewMatrix()
+    {
+        // Calculate forward vector from yaw and pitch
+        Vector3 forward = new Vector3(
+            MathF.Sin(Yaw) * MathF.Cos(Pitch),
+            MathF.Sin(Pitch),
+            MathF.Cos(Yaw) * MathF.Cos(Pitch)
+        );
+        
+        forward = Vector3.Normalize(forward);
+        Vector3 up = Vector3.UnitY;
+        Vector3 target = Position + forward;
+        
+        return Matrix4x4.CreateLookAt(Position, target, up);
+    }
+    
     public void UpdateRotation(Vector2 mouseDelta)
     {
         // Validate input

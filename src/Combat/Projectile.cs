@@ -1,4 +1,5 @@
 using System.Numerics;
+using FPSRoguelike.Entities;
 
 namespace FPSRoguelike.Combat;
 
@@ -12,6 +13,7 @@ public class Projectile
     public float Lifetime { get; private set; }
     public bool IsActive { get; set; }  // False = available in pool
     public bool IsEnemyProjectile { get; set; }  // Determines collision target
+    public Action<Enemy>? OnHit { get; set; }  // Callback when projectile hits enemy
     
     private const float MAX_LIFETIME = 5f;  // Auto-deactivate after 5 seconds
     private const float PROJECTILE_RADIUS = 0.2f;  // Collision sphere radius
@@ -22,7 +24,14 @@ public class Projectile
     }
     
     // Initialize projectile from pool and launch it
-    public void Fire(Vector3 origin, Vector3 direction, float speed, float damage, bool fromEnemy = false)
+    public void Fire(Vector3 origin, Vector3 direction, float speed, float damage, Action<Enemy>? onHit = null)
+    {
+        Fire(origin, direction, speed, damage, false);
+        OnHit = onHit;
+    }
+    
+    // Original Fire method signature for compatibility
+    public void Fire(Vector3 origin, Vector3 direction, float speed, float damage, bool fromEnemy)
     {
         // Validate direction vector
         if (float.IsNaN(direction.X) || float.IsNaN(direction.Y) || float.IsNaN(direction.Z))

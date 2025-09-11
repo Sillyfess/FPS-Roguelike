@@ -10,7 +10,7 @@ class Program
 {
     private static IWindow? window;
     private static GL? gl;
-    private static Game? game;
+    private static GameRefactored? game;
     
     static void Main(string[] args)
     {
@@ -40,7 +40,7 @@ class Program
         if (window == null) return;
         
         gl = GL.GetApi(window);
-        game = new Game(window, gl);
+        game = new GameRefactored(window, gl);
         game.Initialize();
     }
     
