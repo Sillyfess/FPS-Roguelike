@@ -116,6 +116,19 @@ public class InputSystem : IDisposable
         return new Vector2(GetAxis("Horizontal"), GetAxis("Vertical"));
     }
     
+    public IInputContext GetInputContext()
+    {
+        return inputContext ?? throw new InvalidOperationException("InputSystem not initialized");
+    }
+    
+    public void SetCursorMode(CursorMode mode)
+    {
+        if (mouse != null)
+        {
+            mouse.Cursor.CursorMode = mode;
+        }
+    }
+    
     // Event handlers
     private void OnKeyDown(IKeyboard keyboard, Key key, int scancode)
     {

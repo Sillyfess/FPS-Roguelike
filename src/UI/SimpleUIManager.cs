@@ -25,7 +25,7 @@ public class SimpleUIManager
     public void TogglePause()
     {
         isPaused = !isPaused;
-        // Status now shown in HUD instead of console
+        // Status now shown in ImGui HUD
     }
     
     public void ToggleDebugInfo()
@@ -36,7 +36,7 @@ public class SimpleUIManager
     public void PrintHUD(PlayerHealth? playerHealth, Weapon? weapon, int score, 
                         int waveNumber, int enemiesRemaining, float fps)
     {
-        // HUD is now rendered by HUD.cs using OpenGL
+        // HUD is now rendered by ImGuiHUD using Dear ImGui
         // This method kept for compatibility but no longer outputs to console
     }
 }

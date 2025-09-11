@@ -3,6 +3,7 @@ using Silk.NET.OpenGL;
 using Silk.NET.Windowing;
 using System.Drawing;
 using System.Numerics;
+using System.Collections.Generic;
 using FPSRoguelike.Input;
 using FPSRoguelike.Rendering;
 using FPSRoguelike.Physics;
@@ -11,6 +12,7 @@ using FPSRoguelike.Entities;
 using FPSRoguelike.UI;
 using FPSRoguelike.Environment;
 using FPSRoguelike.Editor;
+using ImGuiNET;
 
 namespace FPSRoguelike.Core;
 
@@ -22,10 +24,14 @@ public class Game : IDisposable
     private Renderer? renderer;
     private SimpleUIManager? uiManager;
     private bool showSettingsMenu = false;
+    private bool showWeaponWheel = false;
     
     // Level Editor
     private LevelEditor? levelEditor;
     private bool editorMode = false;
+    
+    // ImGui
+    private ImGuiWrapper? imGuiController;
     
     // Timing
     private double accumulator = 0.0;
@@ -147,8 +153,7 @@ public class Game : IDisposable
     private float respawnCooldown = 0f;
     
     // UI
-    private Crosshair? crosshair;
-    private HUD? hud;
+    private ImGuiHUD? imGuiHud;
     
     public Game(IWindow window, GL gl)
     {
@@ -185,18 +190,20 @@ public class Game : IDisposable
         // Create initial obstacles for the level
         GenerateObstacles();
         
-        // Initialize crosshair
-        crosshair = new Crosshair(gl);
+        // Initialize ImGui HUD
+        imGuiHud = new ImGuiHUD();
         
-        // Initialize HUD
-        hud = new HUD();
-        hud.Initialize(gl);
+        // Keep old HUD for settings menu temporarily
         
         // Initialize player health
         playerHealth = new PlayerHealth(100f);
         
         // Initialize level editor
         levelEditor = new LevelEditor(gl);
+        
+        // Initialize ImGui
+        imGuiController = new ImGuiWrapper(gl, window, inputSystem.GetInputContext());
+        imGuiController.Initialize();
         
         // Initialize UI Manager
         uiManager = new SimpleUIManager();
@@ -247,83 +254,34 @@ public class Game : IDisposable
         }
         
         // Handle UI inputs
+        // ESC to toggle settings menu
         if (inputSystem?.IsKeyJustPressed(Key.Escape) == true)
         {
-            if (uiManager?.IsPaused == true)
+            if (showSettingsMenu)
             {
-                // If already paused and in menu, close menu or unpause
-                if (showSettingsMenu)
-                {
-                    showSettingsMenu = false;
-                }
-                else
-                {
-                    uiManager?.TogglePause();
-                }
+                // Close settings menu and unpause
+                showSettingsMenu = false;
+                uiManager?.TogglePause();
+                inputSystem?.SetCursorMode(CursorMode.Raw); // Hide cursor for gameplay
+                Console.WriteLine($"ESC pressed - Closing settings menu");
             }
             else
             {
-                // If not paused, pause and show menu
-                uiManager?.TogglePause();
+                // Open settings menu and pause
                 showSettingsMenu = true;
+                uiManager?.TogglePause();
+                inputSystem?.SetCursorMode(CursorMode.Normal); // Show cursor for menu
+                Console.WriteLine($"ESC pressed - Opening settings menu");
             }
-            Console.WriteLine($"ESC pressed - Paused: {uiManager?.IsPaused}, Menu: {showSettingsMenu}");
         }
         
-        // Handle menu navigation when paused
-        if (uiManager?.IsPaused == true && showSettingsMenu)
-        {
-            // Navigate menu with arrow keys
-            if (inputSystem?.IsKeyJustPressed(Key.Up) == true || inputSystem?.IsKeyJustPressed(Key.W) == true)
-            {
-                hud?.NavigateMenu(-1);
-            }
-            if (inputSystem?.IsKeyJustPressed(Key.Down) == true || inputSystem?.IsKeyJustPressed(Key.S) == true)
-            {
-                hud?.NavigateMenu(1);
-            }
-            
-            // Adjust settings with left/right arrows
-            if (inputSystem?.IsKeyJustPressed(Key.Left) == true || inputSystem?.IsKeyJustPressed(Key.A) == true)
-            {
-                hud?.AdjustSelectedSetting(-1);
-                // Apply settings if mouse sensitivity or FOV changed
-                if (hud != null && camera != null)
-                {
-                    camera.SetFieldOfView(hud.FieldOfView);
-                }
-            }
-            if (inputSystem?.IsKeyJustPressed(Key.Right) == true || inputSystem?.IsKeyJustPressed(Key.D) == true)
-            {
-                hud?.AdjustSelectedSetting(1);
-                // Apply settings if mouse sensitivity or FOV changed
-                if (hud != null && camera != null)
-                {
-                    camera.SetFieldOfView(hud.FieldOfView);
-                }
-            }
-            
-            // Select menu item with Enter
-            if (inputSystem?.IsKeyJustPressed(Key.Enter) == true || inputSystem?.IsKeyJustPressed(Key.Space) == true)
-            {
-                string? action = hud?.GetSelectedAction();
-                switch (action)
-                {
-                    case "Resume":
-                        uiManager?.TogglePause();
-                        showSettingsMenu = false;
-                        break;
-                    case "Exit Game":
-                        window.Close();
-                        break;
-                }
-            }
-        }
+        // Settings menu navigation is now handled by ImGui
         
         // F1 - Toggle debug info and print to console
         if (inputSystem?.IsKeyJustPressed(Key.F1) == true)
         {
             uiManager?.ToggleDebugInfo();
+            imGuiHud?.ToggleDebugInfo();
             
             // Also print debug info to console
             if (characterController != null && playerHealth != null)
@@ -360,6 +318,41 @@ public class Game : IDisposable
             }
         }
         
+        // Weapon wheel toggle (Q or Tab)
+        if (!showSettingsMenu && (inputSystem?.IsKeyJustPressed(Key.Q) == true || inputSystem?.IsKeyJustPressed(Key.Tab) == true))
+        {
+            if (showWeaponWheel)
+            {
+                imGuiHud?.HideWeaponWheel();
+                showWeaponWheel = false;
+            }
+            else
+            {
+                // Create list of available weapons
+                var weapons = new List<Weapon>();
+                if (revolver != null) weapons.Add(revolver);
+                if (smg != null) weapons.Add(smg);
+                
+                if (weapons.Count > 0)
+                {
+                    imGuiHud?.ShowWeaponWheel(weapons);
+                    showWeaponWheel = true;
+                    
+                    // Note: Can't pause via SimpleUIManager as IsPaused is read-only
+                    // Would need to add pause functionality separately
+                }
+            }
+        }
+        
+        // Handle weapon selection in weapon wheel
+        if (showWeaponWheel && inputSystem?.IsMouseButtonJustPressed(MouseButton.Left) == true)
+        {
+            // Check which weapon was selected (handled in ImGuiHUD)
+            // For now, close the wheel
+            imGuiHud?.HideWeaponWheel();
+            showWeaponWheel = false;
+        }
+        
         // Quick respawn - press F5 to instantly respawn even when alive
         if (inputSystem?.IsKeyJustPressed(Key.F5) == true)
         {
@@ -391,18 +384,22 @@ public class Game : IDisposable
             obstacles = levelEditor.GetLevelObstacles();
         }
         
+        // Update ImGui
+        imGuiController?.Update((float)deltaTime);
+        
         // Only update game when not paused and not in editor mode
         if (uiManager?.IsPaused != true && !editorMode)
         {
             accumulator += deltaTime;
             
             // Handle mouse look every frame (not in fixed timestep)
-            if (inputSystem != null && camera != null)
+            // But only when settings menu is not open
+            if (inputSystem != null && camera != null && !showSettingsMenu)
             {
                 Vector2 mouseDelta = inputSystem.GetMouseDelta();
                 
                 // Apply mouse sensitivity from HUD settings or UI settings
-                float sensitivity = hud?.MouseSensitivity ?? uiManager?.MouseSensitivity ?? 0.3f;
+                float sensitivity = uiManager?.MouseSensitivity ?? 0.3f;
                 mouseDelta *= sensitivity;
                 
                 camera.UpdateRotation(mouseDelta);
@@ -444,15 +441,12 @@ public class Game : IDisposable
             RenderTestCube(interpolation, deltaTime);
         }
         
-        // Render UI elements
-        if (uiManager?.IsPaused != true)
-        {
-            // Crosshair is now part of HUD
-        }
         
-        // Render HUD
+        // Prepare ImGui frame
+        ImGuiNET.ImGui.NewFrame();
+        
+        // Render HUD with ImGui
         int aliveEnemies = enemies.Count(e => e.IsAlive);
-        // Pass 0 for wave since we don't use waves anymore - just boss fights
         Weapon? currentWeapon = currentWeaponIndex switch
         {
             0 => revolver,
@@ -460,8 +454,33 @@ public class Game : IDisposable
             2 => smg,
             _ => revolver
         };
-        hud?.Render(playerHealth, currentWeapon, score, 0, aliveEnemies, uiManager?.IsPaused ?? false, showSettingsMenu);
-        uiManager?.PrintHUD(playerHealth, currentWeapon, score, 0, aliveEnemies, (float)fps);
+        
+        // Update and render ImGui HUD
+        imGuiHud?.Update((float)deltaTime);
+        
+        // Update minimap entities
+        if (characterController != null)
+            imGuiHud?.UpdateMinimapEntities(enemies, characterController, camera?.Yaw ?? 0f);
+        
+        // Pass player rotation for damage indicators and settings menu state
+        imGuiHud?.Render(playerHealth, currentWeapon, score, 0, aliveEnemies, 
+                        uiManager?.IsPaused ?? false, (float)deltaTime, camera?.Yaw ?? 0f, showSettingsMenu);
+        
+        // Check if Resume button was clicked
+        if (showSettingsMenu && imGuiHud?.ShouldCloseSettings() == true)
+        {
+            showSettingsMenu = false;
+            uiManager?.TogglePause();
+            inputSystem?.SetCursorMode(CursorMode.Raw); // Hide cursor for gameplay
+            Console.WriteLine("Resume button clicked - Closing settings menu");
+        }
+        
+        // Settings menu is now handled by ImGui
+        // Old HUD completely removed
+        
+        // End ImGui frame and render
+        ImGuiNET.ImGui.EndFrame();
+        imGuiController?.Render();
     }
     
     private void UpdateGameLogic(double fixedDeltaTime)
@@ -1174,10 +1193,10 @@ void main()
                 // Dispose managed resources
                 inputSystem?.Dispose();
                 renderer?.Cleanup();
-                crosshair?.Dispose();
-                hud?.Dispose();
+                // Old HUD components removed - using ImGui now
                 slashEffect?.Dispose();
                 levelEditor?.Dispose();
+                imGuiController?.Dispose();
             }
             
             // Clean up unmanaged resources (OpenGL)
@@ -1237,6 +1256,11 @@ void main()
         Vector3 bossSpawnPos = new Vector3(0, 1f, 20f); // Spawn in front of player at distance
         var boss = new Boss(bossSpawnPos, BOSS_HEALTH);
         enemies.Add(boss);
+        
+        // Show boss announcement
+        imGuiHud?.ShowWaveAnnouncement("BOSS APPROACHING!");
+        imGuiHud?.AddKillFeedEntry("Boss has entered the arena!", 
+            new Vector4(1f, 0.2f, 0.2f, 1f));
         
         Console.WriteLine($"\n=== BOSS FIGHT ===");
         Console.WriteLine($"Boss Health: {BOSS_HEALTH} HP");
@@ -1361,6 +1385,10 @@ void main()
                 if (projectile.CheckCollision(characterController.Position, PLAYER_RADIUS))
                 {
                     playerHealth.TakeDamage(10f);
+                    
+                    // Add damage indicator
+                    imGuiHud?.AddDamageIndicator(projectile.Position, characterController.Position, 10f);
+                    
                     projectile.Deactivate(); // Return to pool
                 }
             }
@@ -1376,13 +1404,28 @@ void main()
                         enemy.TakeDamage(10f);
                         projectile.Deactivate();
                         
+                        // Show damage number and hit marker
+                        var screenPos = WorldToScreen(enemy.Position + Vector3.UnitY * 2f);
+                        imGuiHud?.AddDamageNumber(screenPos, 10f);
+                        imGuiHud?.ShowHitMarker();
+                        
                         // Hitstop now handled per-enemy in TakeDamage
                         
                         if (!enemy.IsAlive)
                         {
                             enemiesKilled++;
                             score += 100;
-                            Console.WriteLine($"Enemy destroyed! Total kills: {enemiesKilled}");
+                            
+                            // Add to kill feed
+                            imGuiHud?.AddKillFeedEntry("Enemy eliminated!", 
+                                new Vector4(1f, 0.8f, 0.2f, 1f));
+                            
+                            // Check if it was a boss
+                            if (enemy is Boss)
+                            {
+                                imGuiHud?.ShowWaveAnnouncement("BOSS DEFEATED!");
+                                score += 400; // Bonus for boss
+                            }
                         }
                         break;
                     }
@@ -1431,10 +1474,21 @@ void main()
             katana.Slash(origin, direction, enemies, (enemy) =>
             {
                 enemy.TakeDamage(katana.Damage);
-                Console.WriteLine($"[Katana] Hit enemy for {katana.Damage} damage!");
+                
+                // Show damage number and hit marker for melee
+                var screenPos = WorldToScreen(enemy.Position + Vector3.UnitY * 2f);
+                imGuiHud?.AddDamageNumber(screenPos, katana.Damage, true); // Critical for melee
+                imGuiHud?.ShowHitMarker();
+                
+                // Check if killed
+                if (!enemy.IsAlive)
+                {
+                    enemiesKilled++;
+                    score += 150; // Bonus for melee kill
+                    imGuiHud?.AddKillFeedEntry("SLICED!", 
+                        new Vector4(1f, 0.2f, 0.2f, 1f));
+                }
             });
-            
-            Console.WriteLine($"[{katana.Name}] Slashed!");
         }
         else if (currentWeaponIndex == 2)
         {
@@ -1536,5 +1590,38 @@ void main()
         
         // One central pillar
         obstacles.Add(new Obstacle(new Vector3(0f, 5f, 0f), ObstacleType.Pillar)); // Position at y=5 so it reaches ground
+    }
+    
+    private Vector2 WorldToScreen(Vector3 worldPos)
+    {
+        if (camera == null || window == null) return Vector2.Zero;
+        
+        // Get view and projection matrices
+        float aspectRatio = (float)window.Size.X / (float)window.Size.Y;
+        Vector3 cameraPos = camera.Position;
+        Vector3 cameraTarget = cameraPos + camera.GetForwardVector();
+        Matrix4x4 view = Matrix4x4.CreateLookAt(cameraPos, cameraTarget, Vector3.UnitY);
+        Matrix4x4 projection = Matrix4x4.CreatePerspectiveFieldOfView(
+            MathF.PI * camera.FieldOfView / 180f,
+            aspectRatio,
+            0.1f,
+            1000f
+        );
+        
+        // Transform to clip space
+        Vector4 clipPos = Vector4.Transform(new Vector4(worldPos, 1f), view * projection);
+        
+        // Perspective divide
+        if (clipPos.W != 0)
+        {
+            clipPos.X /= clipPos.W;
+            clipPos.Y /= clipPos.W;
+        }
+        
+        // Convert to screen coordinates
+        float screenX = (clipPos.X * 0.5f + 0.5f) * window.Size.X;
+        float screenY = (1f - (clipPos.Y * 0.5f + 0.5f)) * window.Size.Y; // Invert Y
+        
+        return new Vector2(screenX, screenY);
     }
 }
