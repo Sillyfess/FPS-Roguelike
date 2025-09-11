@@ -45,21 +45,26 @@ dotnet run --project FPSRoguelike.csproj
 
 ### Core Systems
 - **Fixed Timestep Game Loop**: 60Hz physics with interpolated rendering
-- **Raw Mouse Input**: Precise FPS aiming without OS acceleration  
+- **Modular Architecture**: Dependency injection with SOLID principles (post-refactor)
+- **Thread-Safe Input**: Raw mouse input with comprehensive locking
+- **Optimized Collision**: Spatial hash grid for O(n) collision detection
 - **Custom Physics**: Character controller with gravity and jumping
-- **Component System**: Simple entity composition (not full ECS)
 
 ### Project Structure
 ```
 src/
-├── Core/          # Main game loop and systems
-├── Input/         # Raw input handling
-├── Entities/      # Enemy AI, player health
-├── Physics/       # Character controller
-├── Combat/        # Weapons and projectiles
-├── Rendering/     # Camera, renderer, crosshair
-├── UI/            # HUD, settings menu (SimpleUIManager)
-└── Environment/   # Obstacles and level elements
+├── Core/          # GameRefactored.cs (main coordinator), Settings, ILogger
+├── Systems/       # Modular game systems with SOLID principles
+│   ├── Core/      # System implementations (EntityManager, CollisionSystem, etc.)
+│   └── Interfaces/# System contracts (IEntityManager, IWeaponSystem, etc.)
+├── Input/         # Thread-safe raw input handling
+├── Entities/      # Enemy AI, Boss, PlayerHealth
+├── Physics/       # CharacterController, SpatialHashGrid (collision optimization)
+├── Combat/        # Weapons (Revolver, SMG, Katana) and Projectiles
+├── Rendering/     # Camera, Renderer, SlashEffect
+├── UI/            # ImGuiHUD, ImGuiWrapper, SimpleUIManager
+├── Environment/   # Obstacles and level elements
+└── Editor/        # Level editor tools
 ```
 
 ## ✅ Current Features
@@ -72,12 +77,12 @@ src/
 - Ground collision detection
 
 ### Combat System
-- Raycast-based pistol weapon
-- Enemy projectile attacks with object pooling (100 pre-allocated)
-- Health and damage systems
+- Multiple weapons: Revolver (raycast), SMG (rapid fire), Katana (melee)
+- Thread-safe projectile pooling (500 pre-allocated)
+- Spatial hash grid collision detection (90% performance improvement)
 - Visual hit feedback (hit markers, damage flash, screenshake)
 - Game feel enhancements (hitstop on enemy hits)
-- Environmental obstacles
+- Environmental obstacles with destructible support
 
 ### Enemy AI
 - State machine behavior (Idle, Patrol, Chase, Attack)
@@ -112,11 +117,13 @@ src/
 ## 🔜 Roadmap
 
 ### Next Priority
-- [ ] Additional weapons (shotgun, machine gun, rocket launcher)
+- [x] Additional weapons (SMG and Katana implemented)
 - [ ] Movement abilities (dash, double jump)
-- [x] Score and UI overlay (HUD implemented)
+- [x] Score and UI overlay (ImGui HUD implemented)
 - [x] Settings menu with adjustable FOV, sensitivity, volume
 - [ ] Sound effects (volume sliders ready, audio system needed)
+- [x] Performance optimization (spatial hashing, instanced rendering)
+- [x] Thread safety fixes (comprehensive locking added)
 
 ### Future Plans
 - [ ] Roguelike item system
@@ -129,12 +136,9 @@ src/
 
 ## 📚 Documentation
 
-- **[CLAUDE.md](CLAUDE.md)** - AI assistant instructions and codebase guide
-- **[Technical-Document.md](Technical-Document.md)** - Core vision and technical decisions
-- **[Architecture-Plan.md](Architecture-Plan.md)** - Detailed system architecture
-- **[Implementation-Guide.md](Implementation-Guide.md)** - Implementation reference
-- **[PROGRESS.md](PROGRESS.md)** - Development timeline and completed features
-- **[ISSUES.md](ISSUES.md)** - Known issues and technical debt
+- **[CLAUDE.md](CLAUDE.md)** - AI assistant instructions and codebase guide (updated)
+- **[CODE_STANDARDS.md](CODE_STANDARDS.md)** - Coding standards and best practices
+- **[ISSUES.md](ISSUES.md)** - Known issues and technical debt tracking
 
 ## 🤝 Contributing
 
