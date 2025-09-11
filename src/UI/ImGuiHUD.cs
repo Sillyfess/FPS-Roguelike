@@ -35,12 +35,9 @@ public class ImGuiHUD
     
     // Weapon wheel state
     private bool showWeaponWheel = false;
-    private int selectedWeaponIndex = 0;
     
     // Minimap data
     private List<MinimapEntity> minimapEntities = new List<MinimapEntity>();
-    private Vector3 playerPosition;
-    private float playerRotation;
     
     // Kill feed entry
     private class KillFeedEntry
@@ -245,9 +242,17 @@ public class ImGuiHUD
         if (weapon is Revolver revolver)
         {
             // Ammo count with large font
-            ImGui.PushFont(ImGui.GetIO().Fonts.Fonts[0]); // Use default for now
-            ImGui.Text($"{revolver.CurrentAmmo} / {revolver.MaxAmmo}");
-            ImGui.PopFont();
+            var fonts = ImGui.GetIO().Fonts;
+            if (fonts.Fonts.Size > 0)
+            {
+                ImGui.PushFont(fonts.Fonts[0]); // Use default for now
+                ImGui.Text($"{revolver.CurrentAmmo} / {revolver.MaxAmmo}");
+                ImGui.PopFont();
+            }
+            else
+            {
+                ImGui.Text($"{revolver.CurrentAmmo} / {revolver.MaxAmmo}");
+            }
             
             // Reload indicator
             if (revolver.IsReloading)

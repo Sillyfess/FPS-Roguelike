@@ -218,12 +218,7 @@ public class Game : IDisposable
         SpawnBoss();
         
         // Lock cursor for FPS
-        var input = window.CreateInput();
-        if (input.Mice.Count > 0)
-        {
-            var mouse = input.Mice[0];
-            mouse.Cursor.CursorMode = CursorMode.Raw;
-        }
+        inputSystem.SetCursorMode(CursorMode.Raw);
         
         Console.WriteLine("Game initialized!");
         Console.WriteLine("Controls:");
@@ -442,9 +437,6 @@ public class Game : IDisposable
         }
         
         
-        // Prepare ImGui frame
-        ImGuiNET.ImGui.NewFrame();
-        
         // Render HUD with ImGui
         int aliveEnemies = enemies.Count(e => e.IsAlive);
         Weapon? currentWeapon = currentWeaponIndex switch
@@ -478,8 +470,7 @@ public class Game : IDisposable
         // Settings menu is now handled by ImGui
         // Old HUD completely removed
         
-        // End ImGui frame and render
-        ImGuiNET.ImGui.EndFrame();
+        // Render ImGui
         imGuiController?.Render();
     }
     

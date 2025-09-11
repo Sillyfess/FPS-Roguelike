@@ -145,12 +145,18 @@ public class ImGuiWrapper : IDisposable
     
     public void Update(float deltaTime)
     {
-        imGuiController?.Update(deltaTime);
+        if (!disposed && imGuiController != null)
+        {
+            imGuiController.Update(deltaTime);
+        }
     }
     
     public void Render()
     {
-        imGuiController?.Render();
+        if (!disposed && imGuiController != null)
+        {
+            imGuiController.Render();
+        }
     }
     
     public void Dispose()

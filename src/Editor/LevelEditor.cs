@@ -475,7 +475,7 @@ public class LevelEditor : IDisposable
     {
         // For now, just load the first level file found
         var levelFiles = Directory.GetFiles(LEVELS_DIRECTORY, "*.json");
-        if (levelFiles.Length > 0)
+        if (levelFiles != null && levelFiles.Length > 0)
         {
             try
             {

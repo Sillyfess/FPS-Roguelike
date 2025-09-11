@@ -31,14 +31,14 @@ public class InputSystem : IDisposable
     {
         inputContext = window.CreateInput();
         
-        if (inputContext.Keyboards.Count > 0)
+        if (inputContext != null && inputContext.Keyboards != null && inputContext.Keyboards.Count > 0)
         {
             keyboard = inputContext.Keyboards[0];
             keyboard.KeyDown += OnKeyDown;
             keyboard.KeyUp += OnKeyUp;
         }
         
-        if (inputContext.Mice.Count > 0)
+        if (inputContext != null && inputContext.Mice != null && inputContext.Mice.Count > 0)
         {
             mouse = inputContext.Mice[0];
             mouse.MouseMove += OnMouseMove;
