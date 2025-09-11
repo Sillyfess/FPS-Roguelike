@@ -16,6 +16,11 @@ public class EntityManager : IEntityManager
     private const int MAX_ENEMIES = 30;
     private const int MAX_OBSTACLES = 50;
     
+    // Thread safety
+    private readonly object enemyLock = new();
+    private readonly object projectileLock = new();
+    private readonly object obstacleLock = new();
+    
     // Entity lists
     private readonly List<Enemy> enemies = new();
     private readonly List<Projectile> projectiles = new();
@@ -23,45 +28,83 @@ public class EntityManager : IEntityManager
     
     // Object pools
     private readonly Queue<Projectile> projectilePool = new();
+    private readonly HashSet<Projectile> pooledProjectiles = new(); // Track what's in pool
     
-    // Public accessors
-    public IReadOnlyList<Enemy> Enemies => enemies;
-    public IReadOnlyList<Projectile> Projectiles => projectiles;
-    public IReadOnlyList<Obstacle> Obstacles => obstacles;
+    // Public accessors - return copies to prevent external modification during iteration
+    public IReadOnlyList<Enemy> Enemies
+    {
+        get
+        {
+            lock (enemyLock)
+            {
+                return enemies.ToList().AsReadOnly();
+            }
+        }
+    }
+    
+    public IReadOnlyList<Projectile> Projectiles
+    {
+        get
+        {
+            lock (projectileLock)
+            {
+                return projectiles.ToList().AsReadOnly();
+            }
+        }
+    }
+    
+    public IReadOnlyList<Obstacle> Obstacles
+    {
+        get
+        {
+            lock (obstacleLock)
+            {
+                return obstacles.ToList().AsReadOnly();
+            }
+        }
+    }
     
     public void Initialize()
     {
-        // Pre-allocate projectile pool
-        for (int i = 0; i < MAX_PROJECTILES; i++)
+        lock (projectileLock)
         {
-            projectilePool.Enqueue(new Projectile());
+            // Pre-allocate projectile pool
+            for (int i = 0; i < MAX_PROJECTILES; i++)
+            {
+                var projectile = new Projectile();
+                projectilePool.Enqueue(projectile);
+                pooledProjectiles.Add(projectile);
+            }
         }
     }
     
     public Enemy SpawnEnemy(Vector3 position, float health, bool isBoss = false)
     {
-        if (enemies.Count >= MAX_ENEMIES)
+        lock (enemyLock)
         {
-            // Find and replace first dead enemy
-            var deadEnemy = enemies.FirstOrDefault(e => !e.IsAlive);
-            if (deadEnemy != null)
+            if (enemies.Count >= MAX_ENEMIES)
             {
-                enemies.Remove(deadEnemy);
+                // Find and replace first dead enemy
+                var deadEnemy = enemies.FirstOrDefault(e => !e.IsAlive);
+                if (deadEnemy != null)
+                {
+                    enemies.Remove(deadEnemy);
+                }
             }
+            
+            Enemy enemy;
+            if (isBoss)
+            {
+                enemy = new Boss(position, health);
+            }
+            else
+            {
+                enemy = new Enemy(position, health);
+            }
+            
+            enemies.Add(enemy);
+            return enemy;
         }
-        
-        Enemy enemy;
-        if (isBoss)
-        {
-            enemy = new Boss(position, health);
-        }
-        else
-        {
-            enemy = new Enemy(position, health);
-        }
-        
-        enemies.Add(enemy);
-        return enemy;
     }
     
     public void FireProjectile(Vector3 position, Vector3 direction, float speed, float damage, 
@@ -84,86 +127,117 @@ public class EntityManager : IEntityManager
             return; // Invalid damage
         }
         
-        // Find inactive projectile from pool
-        Projectile? projectile = null;
-        
-        // First check active projectiles for reuse
-        foreach (var p in projectiles)
+        lock (projectileLock)
         {
-            if (!p.IsActive)
+            // Find inactive projectile from pool
+            Projectile? projectile = null;
+            
+            // First check active projectiles for reuse
+            foreach (var p in projectiles)
             {
-                projectile = p;
-                break;
+                if (!p.IsActive)
+                {
+                    projectile = p;
+                    break;
+                }
             }
-        }
-        
-        // If no inactive projectile found, get from pool or create new
-        if (projectile == null)
-        {
-            if (projectilePool.Count > 0)
+            
+            // If no inactive projectile found, get from pool or create new
+            if (projectile == null)
             {
-                projectile = projectilePool.Dequeue();
-                projectiles.Add(projectile);
-            }
-            else if (projectiles.Count < MAX_PROJECTILES)
+                if (projectilePool.Count > 0)
+                {
+                    projectile = projectilePool.Dequeue();
+                    pooledProjectiles.Remove(projectile);
+                    projectiles.Add(projectile);
+                }
+                else if (projectiles.Count < MAX_PROJECTILES)
             {
                 projectile = new Projectile();
                 projectiles.Add(projectile);
             }
             else
             {
-                // All projectiles in use, find oldest one
-                projectile = projectiles.OrderBy(p => p.Lifetime).FirstOrDefault();
+                // All projectiles in use, find oldest one without LINQ allocation
+                Projectile? oldestProjectile = null;
+                float maxLifetime = float.MinValue;
+                
+                foreach (var p in projectiles)
+                {
+                    if (p.IsActive && p.Lifetime > maxLifetime)
+                    {
+                        maxLifetime = p.Lifetime;
+                        oldestProjectile = p;
+                    }
+                }
+                
+                projectile = oldestProjectile;
             }
+            }
+            
+            // Fire the projectile
+            projectile?.Fire(position, direction, speed, damage, onHit);
         }
-        
-        // Fire the projectile
-        projectile?.Fire(position, direction, speed, damage, onHit);
     }
     
     public void RemoveDeadEnemies()
     {
-        enemies.RemoveAll(e => !e.IsAlive && !e.IsActive);
+        lock (enemyLock)
+        {
+            enemies.RemoveAll(e => !e.IsAlive && !e.IsActive);
+        }
     }
     
     public void CreateObstacle(Vector3 position, Vector3 size, float health = 100f)
     {
-        if (obstacles.Count >= MAX_OBSTACLES)
+        lock (obstacleLock)
         {
-            // Remove first destroyed obstacle
-            var destroyed = obstacles.FirstOrDefault(o => o.IsDestroyed);
-            if (destroyed != null)
+            if (obstacles.Count >= MAX_OBSTACLES)
             {
-                obstacles.Remove(destroyed);
+                // Remove first destroyed obstacle
+                var destroyed = obstacles.FirstOrDefault(o => o.IsDestroyed);
+                if (destroyed != null)
+                {
+                    obstacles.Remove(destroyed);
+                }
             }
+            
+            // Create obstacle with default type (Crate)
+            var obstacle = new Obstacle(position, ObstacleType.Crate, 0f);
+            obstacles.Add(obstacle);
         }
-        
-        // Create obstacle with default type (Crate)
-        var obstacle = new Obstacle(position, ObstacleType.Crate, 0f);
-        obstacles.Add(obstacle);
     }
     
     public Enemy? GetEnemyById(int id)
     {
-        return enemies.FirstOrDefault(e => e.Id == id);
+        lock (enemyLock)
+        {
+            return enemies.FirstOrDefault(e => e.Id == id);
+        }
     }
     
     public List<Enemy> GetEnemiesInRange(Vector3 position, float range)
     {
-        var rangeSqr = range * range;
-        return enemies
-            .Where(e => e.IsAlive && Vector3.DistanceSquared(e.Position, position) <= rangeSqr)
-            .ToList();
+        lock (enemyLock)
+        {
+            var rangeSqr = range * range;
+            return enemies
+                .Where(e => e.IsAlive && Vector3.DistanceSquared(e.Position, position) <= rangeSqr)
+                .ToList();
+        }
     }
     
     public void Update(float deltaTime)
     {
-        // Update all active projectiles
-        foreach (var projectile in projectiles)
+        lock (projectileLock)
         {
-            if (projectile.IsActive)
+            // Update all active projectiles
+            foreach (var projectile in projectiles)
             {
-                projectile.Update(deltaTime);
+                if (projectile.IsActive)
+                {
+                    projectile.Update(deltaTime);
+                }
             }
         }
         
@@ -173,31 +247,53 @@ public class EntityManager : IEntityManager
     
     public void UpdateEnemies(float deltaTime, Vector3 playerPosition)
     {
+        List<Enemy> enemiesCopy;
+        lock (enemyLock)
+        {
+            enemiesCopy = enemies.ToList();
+        }
+        
+        List<Obstacle> obstaclesCopy;
+        lock (obstacleLock)
+        {
+            obstaclesCopy = obstacles.ToList();
+        }
+        
         // Update all living enemies
-        foreach (var enemy in enemies)
+        foreach (var enemy in enemiesCopy)
         {
             if (enemy.IsAlive)
             {
-                enemy.Update(deltaTime, playerPosition, obstacles);
+                enemy.Update(deltaTime, playerPosition, obstaclesCopy);
             }
         }
     }
     
     public void ClearAll()
     {
-        // Return projectiles to pool
-        foreach (var projectile in projectiles)
+        lock (projectileLock)
         {
-            projectile.IsActive = false;
-            if (!projectilePool.Contains(projectile))
+            lock (enemyLock)
             {
-                projectilePool.Enqueue(projectile);
+                lock (obstacleLock)
+                {
+                    // Return projectiles to pool
+                    foreach (var projectile in projectiles)
+                    {
+                        projectile.IsActive = false;
+                        if (!pooledProjectiles.Contains(projectile))
+                        {
+                            projectilePool.Enqueue(projectile);
+                            pooledProjectiles.Add(projectile);
+                        }
+                    }
+                    
+                    projectiles.Clear();
+                    enemies.Clear();
+                    obstacles.Clear();
+                }
             }
         }
-        
-        projectiles.Clear();
-        enemies.Clear();
-        obstacles.Clear();
     }
     
     public void Reset()
@@ -216,7 +312,10 @@ public class EntityManager : IEntityManager
     /// </summary>
     public int GetAliveEnemyCount()
     {
-        return enemies.Count(e => e.IsAlive);
+        lock (enemyLock)
+        {
+            return enemies.Count(e => e.IsAlive);
+        }
     }
     
     /// <summary>
@@ -224,6 +323,9 @@ public class EntityManager : IEntityManager
     /// </summary>
     public int GetActiveProjectileCount()
     {
-        return projectiles.Count(p => p.IsActive);
+        lock (projectileLock)
+        {
+            return projectiles.Count(p => p.IsActive);
+        }
     }
 }

@@ -45,6 +45,12 @@ public class GameRefactored : IDisposable
     private double fpsTimer = 0;
     private int frameCount = 0;
     
+    // Pre-allocated arrays for rendering (avoid per-frame allocations)
+    private readonly Matrix4x4[] enemyTransformBuffer = new Matrix4x4[30];
+    private readonly Vector3[] enemyColorBuffer = new Vector3[30];
+    private readonly Matrix4x4[] projectileTransformBuffer = new Matrix4x4[500];
+    private readonly Vector3[] projectileColorBuffer = new Vector3[500];
+    
     public GameRefactored(IWindow window, GL gl)
     {
         this.window = window;
@@ -176,10 +182,13 @@ public class GameRefactored : IDisposable
         }
         
         // Check collisions
-        collisionSystem?.CheckProjectileEnemyCollisions(
-            entityManager?.Projectiles ?? Array.Empty<Projectile>().ToList().AsReadOnly(),
-            entityManager?.Enemies ?? new List<Enemy>()
-        );
+        if (collisionSystem != null && entityManager != null)
+        {
+            collisionSystem.CheckProjectileEnemyCollisions(
+                entityManager.Projectiles,
+                entityManager.Enemies
+            );
+        }
         
         // Check for enemy deaths and update score
         CheckEnemyDeaths();
@@ -255,22 +264,24 @@ public class GameRefactored : IDisposable
         
         if (enemyCount > 0)
         {
-            Matrix4x4[] enemyTransforms = new Matrix4x4[enemyCount];
-            Vector3[] enemyColors = new Vector3[enemyCount];
-            
-            for (int i = 0; i < enemyCount; i++)
+            int validEnemyCount = 0;
+            for (int i = 0; i < enemyCount && validEnemyCount < 30; i++)
             {
                 var enemy = enemies[i];
                 if (!enemy.IsAlive) continue;
                 
                 // Create transform matrix for enemy
                 float scale = enemy is Boss ? 3f : 1f;
-                enemyTransforms[i] = Matrix4x4.CreateScale(scale) * 
+                enemyTransformBuffer[validEnemyCount] = Matrix4x4.CreateScale(scale) * 
                                     Matrix4x4.CreateTranslation(enemy.Position);
-                enemyColors[i] = enemy.Color;
+                enemyColorBuffer[validEnemyCount] = enemy.Color;
+                validEnemyCount++;
             }
             
-            renderingSystem.RenderCubesInstanced(enemyTransforms, enemyColors, enemyCount);
+            if (validEnemyCount > 0)
+            {
+                renderingSystem.RenderCubesInstanced(enemyTransformBuffer, enemyColorBuffer, validEnemyCount);
+            }
         }
         
         // Prepare instance data for projectiles
@@ -279,22 +290,22 @@ public class GameRefactored : IDisposable
         
         if (projectileCount > 0)
         {
-            Matrix4x4[] projectileTransforms = new Matrix4x4[projectileCount];
-            Vector3[] projectileColors = new Vector3[projectileCount];
-            
             int index = 0;
             foreach (var proj in projectiles)
             {
                 if (!proj.IsActive) continue;
-                if (index >= projectileCount) break;
+                if (index >= projectileCount || index >= 500) break;
                 
-                projectileTransforms[index] = Matrix4x4.CreateScale(0.1f) * 
+                projectileTransformBuffer[index] = Matrix4x4.CreateScale(0.1f) * 
                                              Matrix4x4.CreateTranslation(proj.Position);
-                projectileColors[index] = new Vector3(1f, 1f, 0f); // Yellow
+                projectileColorBuffer[index] = new Vector3(1f, 1f, 0f); // Yellow
                 index++;
             }
             
-            renderingSystem.RenderCubesInstanced(projectileTransforms, projectileColors, projectileCount);
+            if (index > 0)
+            {
+                renderingSystem.RenderCubesInstanced(projectileTransformBuffer, projectileColorBuffer, index);
+            }
         }
         
         // Render obstacles

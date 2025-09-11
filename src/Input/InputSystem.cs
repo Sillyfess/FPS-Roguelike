@@ -69,16 +69,54 @@ public class InputSystem : IDisposable
     }
     
     // Keyboard input
-    public bool IsKeyPressed(Key key) => currentKeys.Contains(key);
-    public bool IsKeyJustPressed(Key key) => currentKeys.Contains(key) && !previousKeys.Contains(key);
-    public bool IsKeyJustReleased(Key key) => !currentKeys.Contains(key) && previousKeys.Contains(key);
+    public bool IsKeyPressed(Key key)
+    {
+        lock (lockObject)
+        {
+            return currentKeys.Contains(key);
+        }
+    }
+    
+    public bool IsKeyJustPressed(Key key)
+    {
+        lock (lockObject)
+        {
+            return currentKeys.Contains(key) && !previousKeys.Contains(key);
+        }
+    }
+    
+    public bool IsKeyJustReleased(Key key)
+    {
+        lock (lockObject)
+        {
+            return !currentKeys.Contains(key) && previousKeys.Contains(key);
+        }
+    }
     
     // Mouse input
-    public bool IsMouseButtonPressed(MouseButton button) => currentMouseButtons.Contains(button);
-    public bool IsMouseButtonJustPressed(MouseButton button) => 
-        currentMouseButtons.Contains(button) && !previousMouseButtons.Contains(button);
-    public bool IsMouseButtonJustReleased(MouseButton button) => 
-        !currentMouseButtons.Contains(button) && previousMouseButtons.Contains(button);
+    public bool IsMouseButtonPressed(MouseButton button)
+    {
+        lock (lockObject)
+        {
+            return currentMouseButtons.Contains(button);
+        }
+    }
+    
+    public bool IsMouseButtonJustPressed(MouseButton button)
+    {
+        lock (lockObject)
+        {
+            return currentMouseButtons.Contains(button) && !previousMouseButtons.Contains(button);
+        }
+    }
+    
+    public bool IsMouseButtonJustReleased(MouseButton button)
+    {
+        lock (lockObject)
+        {
+            return !currentMouseButtons.Contains(button) && previousMouseButtons.Contains(button);
+        }
+    }
     
     public Vector2 GetMouseDelta() 
     {
@@ -96,19 +134,28 @@ public class InputSystem : IDisposable
             accumulatedMouseDelta = Vector2.Zero;
         }
     }
-    public Vector2 GetMousePosition() => lastMousePosition;
+    public Vector2 GetMousePosition()
+    {
+        lock (lockObject)
+        {
+            return lastMousePosition;
+        }
+    }
     
     // Input axis mapping
     public float GetAxis(string axisName)
     {
-        return axisName switch
+        lock (lockObject)
         {
-            "Horizontal" => (IsKeyPressed(Key.D) ? 1f : 0f) - (IsKeyPressed(Key.A) ? 1f : 0f),
-            "Vertical" => (IsKeyPressed(Key.W) ? 1f : 0f) - (IsKeyPressed(Key.S) ? 1f : 0f),
-            "MouseX" => mouseDelta.X,
-            "MouseY" => mouseDelta.Y,
-            _ => 0f
-        };
+            return axisName switch
+            {
+                "Horizontal" => (currentKeys.Contains(Key.D) ? 1f : 0f) - (currentKeys.Contains(Key.A) ? 1f : 0f),
+                "Vertical" => (currentKeys.Contains(Key.W) ? 1f : 0f) - (currentKeys.Contains(Key.S) ? 1f : 0f),
+                "MouseX" => mouseDelta.X,
+                "MouseY" => mouseDelta.Y,
+                _ => 0f
+            };
+        }
     }
     
     public Vector2 GetMovementInput()
@@ -139,9 +186,10 @@ public class InputSystem : IDisposable
                 currentKeys.Add(key);
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Error in OnKeyDown: {ex.Message}");
+            // Silently handle to avoid performance impact
+            // TODO: Add proper logging when ILogger is available
         }
     }
     
@@ -154,9 +202,10 @@ public class InputSystem : IDisposable
                 currentKeys.Remove(key);
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Error in OnKeyUp: {ex.Message}");
+            // Silently handle to avoid performance impact
+            // TODO: Add proper logging when ILogger is available
         }
     }
     
@@ -186,9 +235,10 @@ public class InputSystem : IDisposable
                 lastMousePosition = position;
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Error in OnMouseMove: {ex.Message}");
+            // Silently handle to avoid performance impact
+            // TODO: Add proper logging when ILogger is available
         }
     }
     
@@ -201,9 +251,10 @@ public class InputSystem : IDisposable
                 currentMouseButtons.Add(button);
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Error in OnMouseDown: {ex.Message}");
+            // Silently handle to avoid performance impact
+            // TODO: Add proper logging when ILogger is available
         }
     }
     
@@ -216,14 +267,21 @@ public class InputSystem : IDisposable
                 currentMouseButtons.Remove(button);
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Error in OnMouseUp: {ex.Message}");
+            // Silently handle to avoid performance impact
+            // TODO: Add proper logging when ILogger is available
         }
     }
     
     private float scrollDelta = 0f;
-    public float GetScrollDelta() => scrollDelta;
+    public float GetScrollDelta()
+    {
+        lock (lockObject)
+        {
+            return scrollDelta;
+        }
+    }
     
     private void OnMouseScroll(IMouse mouse, ScrollWheel wheel)
     {

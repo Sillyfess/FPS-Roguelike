@@ -37,4 +37,9 @@ public interface ICollisionSystem : IGameSystem
     /// Get nearest enemy to position
     /// </summary>
     Enemy? GetNearestEnemy(Vector3 position, IReadOnlyList<Enemy> enemies);
+    
+    /// <summary>
+    /// Get performance statistics for the collision system
+    /// </summary>
+    string GetPerformanceStats();
 }
