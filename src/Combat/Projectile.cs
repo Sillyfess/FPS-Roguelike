@@ -1,5 +1,6 @@
 using System.Numerics;
 using FPSRoguelike.Entities;
+using FPSRoguelike.Core;
 
 namespace FPSRoguelike.Combat;
 
@@ -15,8 +16,7 @@ public class Projectile
     public bool IsEnemyProjectile { get; set; }  // Determines collision target
     public Action<Enemy>? OnHit { get; set; }  // Callback when projectile hits enemy
     
-    private const float MAX_LIFETIME = 5f;  // Auto-deactivate after 5 seconds
-    private const float PROJECTILE_RADIUS = 0.2f;  // Collision sphere radius
+    // Constants moved to Core.Constants
     
     public Projectile()
     {
@@ -41,8 +41,7 @@ public class Projectile
         
         // Normalize direction if not already (with proper epsilon for floating point comparison)
         float lengthSquared = direction.LengthSquared();
-        const float NORMALIZATION_EPSILON = 0.0001f; // Much tighter tolerance for unit vectors
-        if (Math.Abs(lengthSquared - 1.0f) > NORMALIZATION_EPSILON && lengthSquared > 0)
+        if (Math.Abs(lengthSquared - 1.0f) > Constants.VECTOR_NORMALIZATION_EPSILON && lengthSquared > 0)
         {
             direction = Vector3.Normalize(direction);
         }
@@ -75,8 +74,7 @@ public class Projectile
         Lifetime += deltaTime;
         
         // Return to pool if expired or hit ground
-        const float GROUND_LEVEL = 0f;
-        if (Lifetime >= MAX_LIFETIME || Position.Y <= GROUND_LEVEL)
+        if (Lifetime >= Constants.PROJECTILE_LIFETIME || Position.Y <= Constants.GROUND_LEVEL)
         {
             IsActive = false;
         }
@@ -88,7 +86,7 @@ public class Projectile
         if (!IsActive) return false;
         
         float distance = Vector3.Distance(Position, targetPosition);
-        return distance <= (PROJECTILE_RADIUS + targetRadius);  // Combined radii
+        return distance <= (Constants.PROJECTILE_RADIUS + targetRadius);  // Combined radii
     }
     
     public void Deactivate()

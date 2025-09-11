@@ -9,6 +9,7 @@ namespace FPSRoguelike.Core;
 /// </summary>
 public class Settings
 {
+    private static readonly ILogger logger = new ConsoleLogger();
     // Display settings
     public float FieldOfView { get; set; } = 90f;
     public bool VSync { get; set; } = false;
@@ -50,7 +51,7 @@ public class Settings
         catch (Exception ex)
         {
             // If loading fails, just use defaults
-            Console.WriteLine($"[Settings] Failed to load settings: {ex.Message}");
+            logger.LogWarning($"Failed to load settings: {ex.Message}");
         }
         
         return new Settings();
@@ -81,7 +82,7 @@ public class Settings
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Settings] Failed to save settings: {ex.Message}");
+            logger.LogError($"Failed to save settings: {ex.Message}");
         }
     }
     

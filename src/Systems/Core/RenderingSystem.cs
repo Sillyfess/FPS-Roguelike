@@ -1,6 +1,7 @@
 using Silk.NET.OpenGL;
 using System.Numerics;
 using FPSRoguelike.Systems.Interfaces;
+using FPSRoguelike.Core;
 
 namespace FPSRoguelike.Systems.Core;
 
@@ -20,22 +21,20 @@ public class RenderingSystem : IRenderingSystem
     private uint enemyInstanceVBO;
     private uint projectileInstanceVBO;
     
-    // Constants
-    private const int MAX_ENEMY_INSTANCES = 30;
-    private const int MAX_PROJECTILE_INSTANCES = 500;
+    // Constants are in Core.Constants
     
     // Instance data buffers
-    private Matrix4x4[] enemyInstanceData = new Matrix4x4[MAX_ENEMY_INSTANCES];
-    private Vector3[] enemyInstanceColors = new Vector3[MAX_ENEMY_INSTANCES];
-    private Matrix4x4[] projectileInstanceData = new Matrix4x4[MAX_PROJECTILE_INSTANCES];
-    private Vector3[] projectileInstanceColors = new Vector3[MAX_PROJECTILE_INSTANCES];
+    private Matrix4x4[] enemyInstanceData = new Matrix4x4[Constants.MAX_ENEMY_INSTANCES];
+    private Vector3[] enemyInstanceColors = new Vector3[Constants.MAX_ENEMY_INSTANCES];
+    private Matrix4x4[] projectileInstanceData = new Matrix4x4[Constants.MAX_PROJECTILE_INSTANCES];
+    private Vector3[] projectileInstanceColors = new Vector3[Constants.MAX_PROJECTILE_INSTANCES];
     
     // Camera matrices
     private Matrix4x4 viewMatrix = Matrix4x4.Identity;
     private Matrix4x4 projectionMatrix = Matrix4x4.Identity;
     
     // Pre-allocated buffer for instance data (avoid per-frame allocations)
-    private float[] instanceDataBuffer = new float[MAX_PROJECTILE_INSTANCES * 19]; // Max size needed
+    private float[] instanceDataBuffer = new float[Constants.MAX_PROJECTILE_INSTANCES * 19]; // Max size needed
     
     // Cube vertices - need 24 vertices (4 per face) for proper normals
     private readonly float[] vertices = 
@@ -294,7 +293,7 @@ public class RenderingSystem : IRenderingSystem
         unsafe
         {
             gl.BufferData(BufferTargetARB.ArrayBuffer, 
-                         (nuint)(MAX_ENEMY_INSTANCES * (sizeof(float) * 16 + sizeof(float) * 3)), 
+                         (nuint)(Constants.MAX_ENEMY_INSTANCES * (sizeof(float) * 16 + sizeof(float) * 3)), 
                          null, BufferUsageARB.DynamicDraw);
         }
         
@@ -304,7 +303,7 @@ public class RenderingSystem : IRenderingSystem
         unsafe
         {
             gl.BufferData(BufferTargetARB.ArrayBuffer, 
-                         (nuint)(MAX_PROJECTILE_INSTANCES * (sizeof(float) * 16 + sizeof(float) * 3)), 
+                         (nuint)(Constants.MAX_PROJECTILE_INSTANCES * (sizeof(float) * 16 + sizeof(float) * 3)), 
                          null, BufferUsageARB.DynamicDraw);
         }
         
@@ -417,14 +416,22 @@ public class RenderingSystem : IRenderingSystem
         if (gl == null || count <= 0) return;
         
         // Validate array bounds to prevent crashes
+        if (transforms == null || colors == null)
+        {
+            throw new ArgumentNullException("Transform or color arrays cannot be null");
+        }
+        
         if (transforms.Length < count || colors.Length < count)
         {
             // Clamp count to smallest array to prevent IndexOutOfRangeException
             count = Math.Min(count, Math.Min(transforms.Length, colors.Length));
         }
         
+        // Additional safety: clamp to max instances we support
+        count = Math.Min(count, Constants.MAX_PROJECTILE_INSTANCES);
+        
         // Choose appropriate instance buffer based on expected usage
-        uint instanceVBO = (count <= MAX_ENEMY_INSTANCES) ? enemyInstanceVBO : projectileInstanceVBO;
+        uint instanceVBO = (count <= Constants.MAX_ENEMY_INSTANCES) ? enemyInstanceVBO : projectileInstanceVBO;
         
         // Update instance buffer
         gl.BindBuffer(BufferTargetARB.ArrayBuffer, instanceVBO);
@@ -442,9 +449,21 @@ public class RenderingSystem : IRenderingSystem
             // Fill buffer with instance data
             for (int i = 0; i < count; i++)
             {
+                // Bounds check for safety (should never happen with our validation, but defense in depth)
+                if (i >= transforms.Length || i >= colors.Length)
+                {
+                    break; // Stop if we somehow exceed array bounds
+                }
+                
                 // Copy matrix directly using unsafe access (much faster than GetMatrixElement)
                 ref Matrix4x4 matrix = ref transforms[i];
                 int offset = i * 19;
+                
+                // Ensure we don't write past buffer end
+                if (offset + 18 >= instanceDataBuffer.Length)
+                {
+                    break; // Buffer would overflow, stop here
+                }
                 
                 instanceDataBuffer[offset + 0] = matrix.M11;
                 instanceDataBuffer[offset + 1] = matrix.M12;

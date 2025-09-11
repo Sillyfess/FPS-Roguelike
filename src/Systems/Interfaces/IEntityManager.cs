@@ -57,6 +57,15 @@ public interface IEntityManager : IGameSystem
     List<Enemy> GetEnemiesInRange(Vector3 position, float range);
     
     /// <summary>
+    /// Get enemies within an arc (for melee attacks)
+    /// </summary>
+    /// <param name="position">Attack origin position</param>
+    /// <param name="forward">Forward direction vector (normalized)</param>
+    /// <param name="range">Maximum range of the arc</param>
+    /// <param name="arcAngle">Arc angle in degrees (e.g., 90 for 90-degree cone)</param>
+    List<Enemy> GetEnemiesInArc(Vector3 position, Vector3 forward, float range, float arcAngle);
+    
+    /// <summary>
     /// Clear all entities
     /// </summary>
     void ClearAll();

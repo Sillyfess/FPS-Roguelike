@@ -1,9 +1,11 @@
 using System.Numerics;
+using FPSRoguelike.Core;
 
 namespace FPSRoguelike.Combat;
 
 public class SMG : Weapon
 {
+    private static readonly ILogger logger = new NullLogger(); // Use NullLogger for production
     private const float SMG_DAMAGE = 15f;  // Lower damage per shot
     private const float SMG_FIRE_RATE = 0.1f;  // Very fast fire rate (10 shots/second)
     private const float SMG_RANGE = 100f;  // Medium-long range
@@ -75,7 +77,7 @@ public class SMG : Weapon
         
         isReloading = true;
         reloadTimer = 0f;
-        Console.WriteLine("[SMG] Reloading...");
+        logger.LogDebug("SMG reloading...");
     }
     
     public override void Update(float deltaTime)
@@ -91,7 +93,7 @@ public class SMG : Weapon
                 currentAmmo = SMG_CAPACITY;
                 isReloading = false;
                 reloadTimer = 0f;
-                Console.WriteLine("[SMG] Reloaded!");
+                logger.LogDebug("SMG reloaded!");
             }
         }
     }

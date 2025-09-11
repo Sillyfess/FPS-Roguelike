@@ -1,6 +1,7 @@
 using Silk.NET.Input;
 using Silk.NET.Windowing;
 using System.Numerics;
+using FPSRoguelike.Core;
 
 namespace FPSRoguelike.Input;
 
@@ -14,6 +15,9 @@ public class InputSystem : IDisposable
     // Thread safety
     private readonly object lockObject = new object();
     
+    // Logging
+    private readonly ILogger logger;
+    
     // Track current and previous states for "just pressed" detection
     private HashSet<Key> currentKeys = new();
     private HashSet<Key> previousKeys = new();
@@ -26,6 +30,15 @@ public class InputSystem : IDisposable
     private Vector2 accumulatedMouseDelta;  // Accumulate between fixed timesteps
     private Vector2 lastMousePosition;
     private bool firstMouseMove = true;  // Ignore first frame to prevent jump
+    
+    // Input failure tracking
+    private int inputErrorCount = 0;
+    private const int MAX_INPUT_ERRORS = 10;
+    
+    public InputSystem(ILogger? logger = null)
+    {
+        this.logger = logger ?? new NullLogger();
+    }
     
     public void Initialize(IWindow window)
     {
@@ -59,9 +72,15 @@ public class InputSystem : IDisposable
             previousMouseButtons.Clear();
             previousMouseButtons.UnionWith(currentMouseButtons);
             
-            // Transfer accumulated mouse movement to this frame
-            mouseDelta = accumulatedMouseDelta;
-            accumulatedMouseDelta = Vector2.Zero;  // Reset for next accumulation
+            // Only transfer mouse delta if there's new data
+            // This prevents losing data on multiple polls
+            if (accumulatedMouseDelta != Vector2.Zero)
+            {
+                mouseDelta = accumulatedMouseDelta;
+                accumulatedMouseDelta = Vector2.Zero;  // Reset for next accumulation
+            }
+            // If no new mouse data, keep the previous delta for one more frame
+            // This ensures smooth mouse input even with timing mismatches
             
             // Reset scroll delta after reading (it doesn't accumulate like mouse movement)
             scrollDelta = 0f;
@@ -186,10 +205,17 @@ public class InputSystem : IDisposable
                 currentKeys.Add(key);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently handle to avoid performance impact
-            // TODO: Add proper logging when ILogger is available
+            inputErrorCount++;
+            logger.LogError($"KeyDown event failed for key {key}: {ex.Message}");
+            
+            // If we're getting too many errors, try to recover
+            if (inputErrorCount > MAX_INPUT_ERRORS)
+            {
+                logger.LogWarning("Too many input errors, attempting to reinitialize keyboard events");
+                ReinitializeKeyboardEvents();
+            }
         }
     }
     
@@ -202,10 +228,10 @@ public class InputSystem : IDisposable
                 currentKeys.Remove(key);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently handle to avoid performance impact
-            // TODO: Add proper logging when ILogger is available
+            logger.LogError($"KeyUp event failed for key {key}: {ex.Message}");
+            // Key up failures are less critical, but still log them
         }
     }
     
@@ -223,6 +249,13 @@ public class InputSystem : IDisposable
                     return;
                 }
                 
+                // Validate position to prevent NaN/Infinity issues
+                if (!IsValidVector2(position))
+                {
+                    logger.LogWarning($"Invalid mouse position received: {position}");
+                    return;
+                }
+                
                 // Accumulate raw mouse movement between polls
                 var delta = position - lastMousePosition;
                 
@@ -235,10 +268,17 @@ public class InputSystem : IDisposable
                 lastMousePosition = position;
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently handle to avoid performance impact
-            // TODO: Add proper logging when ILogger is available
+            inputErrorCount++;
+            logger.LogError($"MouseMove event failed at position {position}: {ex.Message}");
+            
+            // Mouse movement is critical for FPS games
+            if (inputErrorCount > MAX_INPUT_ERRORS)
+            {
+                logger.LogWarning("Too many mouse errors, attempting recovery");
+                ReinitializeMouseEvents();
+            }
         }
     }
     
@@ -251,10 +291,9 @@ public class InputSystem : IDisposable
                 currentMouseButtons.Add(button);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently handle to avoid performance impact
-            // TODO: Add proper logging when ILogger is available
+            logger.LogError($"MouseDown event failed for button {button}: {ex.Message}");
         }
     }
     
@@ -267,10 +306,9 @@ public class InputSystem : IDisposable
                 currentMouseButtons.Remove(button);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently handle to avoid performance impact
-            // TODO: Add proper logging when ILogger is available
+            logger.LogError($"MouseUp event failed for button {button}: {ex.Message}");
         }
     }
     
@@ -329,6 +367,62 @@ public class InputSystem : IDisposable
             }
             
             disposed = true;
+        }
+    }
+    
+    // Helper methods for error recovery
+    private bool IsValidVector2(Vector2 v)
+    {
+        return !float.IsNaN(v.X) && !float.IsNaN(v.Y) && 
+               !float.IsInfinity(v.X) && !float.IsInfinity(v.Y);
+    }
+    
+    private void ReinitializeKeyboardEvents()
+    {
+        try
+        {
+            if (keyboard != null)
+            {
+                // Unsubscribe and resubscribe to events
+                keyboard.KeyDown -= OnKeyDown;
+                keyboard.KeyUp -= OnKeyUp;
+                keyboard.KeyDown += OnKeyDown;
+                keyboard.KeyUp += OnKeyUp;
+                inputErrorCount = 0;
+                logger.LogInfo("Keyboard events reinitialized successfully");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError($"Failed to reinitialize keyboard events: {ex.Message}");
+        }
+    }
+    
+    private void ReinitializeMouseEvents()
+    {
+        try
+        {
+            if (mouse != null)
+            {
+                // Unsubscribe and resubscribe to events
+                mouse.MouseMove -= OnMouseMove;
+                mouse.MouseDown -= OnMouseDown;
+                mouse.MouseUp -= OnMouseUp;
+                mouse.Scroll -= OnMouseScroll;
+                
+                mouse.MouseMove += OnMouseMove;
+                mouse.MouseDown += OnMouseDown;
+                mouse.MouseUp += OnMouseUp;
+                mouse.Scroll += OnMouseScroll;
+                
+                inputErrorCount = 0;
+                firstMouseMove = true; // Reset first move flag
+                logger.LogInfo("Mouse events reinitialized successfully");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError($"Failed to reinitialize mouse events: {ex.Message}");
         }
     }
 }

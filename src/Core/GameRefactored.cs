@@ -20,6 +20,7 @@ public class GameRefactored : IDisposable
     // Core dependencies
     private readonly IWindow window;
     private readonly GL gl;
+    private readonly ILogger logger;
     
     // Game systems
     private InputSystem? inputSystem;
@@ -37,8 +38,6 @@ public class GameRefactored : IDisposable
     
     // Timing
     private double accumulator = 0.0;
-    private const double FIXED_TIMESTEP = 1.0 / 60.0;
-    private const int MAX_UPDATES = 10;
     
     // Performance tracking
     private double fps = 0;
@@ -55,12 +54,13 @@ public class GameRefactored : IDisposable
     {
         this.window = window;
         this.gl = gl;
+        this.logger = new ConsoleLogger(enableDebug: true);
     }
     
     public void Initialize()
     {
         // Initialize input system first (needed by other systems)
-        inputSystem = new InputSystem();
+        inputSystem = new InputSystem(logger);
         inputSystem.Initialize(window);
         
         // Create all game systems with proper dependency injection
@@ -147,10 +147,10 @@ public class GameRefactored : IDisposable
         
         // Fixed timestep update loop
         int updates = 0;
-        while (accumulator >= FIXED_TIMESTEP && updates < MAX_UPDATES)
+        while (accumulator >= Constants.FIXED_TIMESTEP && updates < Constants.MAX_PHYSICS_UPDATES)
         {
-            UpdateGameLogic(FIXED_TIMESTEP);
-            accumulator -= FIXED_TIMESTEP;
+            UpdateGameLogic(Constants.FIXED_TIMESTEP);
+            accumulator -= Constants.FIXED_TIMESTEP;
             updates++;
         }
     }
@@ -205,18 +205,18 @@ public class GameRefactored : IDisposable
         // Begin frame
         renderingSystem?.BeginFrame();
         
-        double interpolation = accumulator / FIXED_TIMESTEP;
+        double interpolation = accumulator / Constants.FIXED_TIMESTEP;
         
         // Set camera matrices for rendering
         if (playerSystem is PlayerSystem ps)
         {
             var camera = ps.Camera;
-            float fov = uiCoordinator?.FieldOfView ?? 90f;
+            float fov = uiCoordinator?.FieldOfView ?? Constants.DEFAULT_FOV;
             float aspect = renderingSystem?.GetAspectRatio() ?? 16f/9f;
             
             Matrix4x4 view = camera.GetViewMatrix();
             Matrix4x4 projection = Matrix4x4.CreatePerspectiveFieldOfView(
-                fov * MathF.PI / 180f, aspect, 0.1f, 1000f);
+                fov * Constants.FOV_TO_RADIANS, aspect, Constants.CAMERA_NEAR_PLANE, Constants.CAMERA_FAR_PLANE);
             
             renderingSystem?.SetCamera(view, projection);
         }
@@ -271,7 +271,7 @@ public class GameRefactored : IDisposable
                 if (!enemy.IsAlive) continue;
                 
                 // Create transform matrix for enemy
-                float scale = enemy is Boss ? 3f : 1f;
+                float scale = enemy is Boss ? Constants.BOSS_SCALE : Constants.DEFAULT_ENEMY_SCALE;
                 enemyTransformBuffer[validEnemyCount] = Matrix4x4.CreateScale(scale) * 
                                     Matrix4x4.CreateTranslation(enemy.Position);
                 enemyColorBuffer[validEnemyCount] = enemy.Color;
@@ -286,7 +286,14 @@ public class GameRefactored : IDisposable
         
         // Prepare instance data for projectiles
         var projectiles = entityManager.Projectiles;
-        int projectileCount = Math.Min(projectiles.Count(p => p.IsActive), 500);
+        
+        // Count active projectiles without LINQ
+        int activeProjectileCount = 0;
+        foreach (var p in projectiles)
+        {
+            if (p.IsActive) activeProjectileCount++;
+        }
+        int projectileCount = Math.Min(activeProjectileCount, 500);
         
         if (projectileCount > 0)
         {
@@ -296,9 +303,9 @@ public class GameRefactored : IDisposable
                 if (!proj.IsActive) continue;
                 if (index >= projectileCount || index >= 500) break;
                 
-                projectileTransformBuffer[index] = Matrix4x4.CreateScale(0.1f) * 
+                projectileTransformBuffer[index] = Matrix4x4.CreateScale(Constants.PROJECTILE_SCALE) * 
                                              Matrix4x4.CreateTranslation(proj.Position);
-                projectileColorBuffer[index] = new Vector3(1f, 1f, 0f); // Yellow
+                projectileColorBuffer[index] = new Vector3(Constants.PROJECTILE_COLOR_R, Constants.PROJECTILE_COLOR_G, Constants.PROJECTILE_COLOR_B);
                 index++;
             }
             
@@ -315,24 +322,24 @@ public class GameRefactored : IDisposable
             
             Matrix4x4 transform = Matrix4x4.CreateScale(obstacle.Size) * 
                                  Matrix4x4.CreateTranslation(obstacle.Position);
-            Vector3 color = new Vector3(0.3f, 0.3f, 0.3f); // Gray
+            Vector3 color = new Vector3(Constants.OBSTACLE_COLOR_R, Constants.OBSTACLE_COLOR_G, Constants.OBSTACLE_COLOR_B);
             
             renderingSystem.RenderCube(transform, color);
         }
         
         // Render ground plane
-        Matrix4x4 groundTransform = Matrix4x4.CreateScale(100f, 0.1f, 100f) * 
+        Matrix4x4 groundTransform = Matrix4x4.CreateScale(Constants.GROUND_WIDTH, Constants.GROUND_HEIGHT, Constants.GROUND_DEPTH) * 
                                    Matrix4x4.CreateTranslation(0, -0.05f, 0);
-        renderingSystem.RenderCube(groundTransform, new Vector3(0.2f, 0.3f, 0.2f));
+        renderingSystem.RenderCube(groundTransform, new Vector3(Constants.GROUND_COLOR_R, Constants.GROUND_COLOR_G, Constants.GROUND_COLOR_B));
         
         // Render weapon effects
         if (weaponSystem is WeaponSystem ws && playerSystem is PlayerSystem ps)
         {
             var view = ps.Camera.GetViewMatrix();
             float aspect = renderingSystem.GetAspectRatio();
-            float fov = uiCoordinator?.FieldOfView ?? 90f;
+            float fov = uiCoordinator?.FieldOfView ?? Constants.DEFAULT_FOV;
             var proj = Matrix4x4.CreatePerspectiveFieldOfView(
-                fov * MathF.PI / 180f, aspect, 0.1f, 1000f);
+                fov * Constants.FOV_TO_RADIANS, aspect, Constants.CAMERA_NEAR_PLANE, Constants.CAMERA_FAR_PLANE);
             
             ws.RenderEffects(ps.Position, view, proj);
         }
@@ -442,10 +449,10 @@ public class GameRefactored : IDisposable
             if (!enemy.IsAlive) continue;
             
             // Check if enemy is in melee range
-            if (collisionSystem.CheckMeleeRange(enemy.Position, playerSystem.Position, 2f))
+            if (collisionSystem.CheckMeleeRange(enemy.Position, playerSystem.Position, Constants.MELEE_ENEMY_RANGE))
             {
                 // Apply damage to player
-                playerSystem.TakeDamage(10f, enemy.Position);
+                playerSystem.TakeDamage(Constants.MELEE_ENEMY_DAMAGE, enemy.Position);
             }
         }
     }
@@ -478,6 +485,14 @@ public class GameRefactored : IDisposable
     
     public void Dispose()
     {
+        logger?.LogInfo("Shutting down game systems...");
+        
+        // Save settings before disposing UI coordinator
+        if (uiCoordinator is UICoordinator uiCoord)
+        {
+            uiCoord.SaveSettings();
+        }
+        
         // Dispose all systems in reverse order of creation
         levelEditor?.Dispose();
         uiCoordinator?.Dispose();
@@ -489,5 +504,7 @@ public class GameRefactored : IDisposable
         collisionSystem?.Dispose();
         entityManager?.Dispose();
         inputSystem?.Dispose();
+        
+        logger?.LogInfo("Game shutdown complete.");
     }
 }

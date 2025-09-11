@@ -31,6 +31,9 @@ public class UICoordinator : IUICoordinator
     // Settings
     private Settings? settings;
     private bool showSettingsMenu = false;
+    private float autoSaveTimer = 0f;
+    private const float AUTO_SAVE_INTERVAL = 30f; // Auto-save every 30 seconds
+    private bool settingsChanged = false;
     
     // Properties
     public bool IsSettingsMenuVisible => showSettingsMenu;
@@ -94,6 +97,36 @@ public class UICoordinator : IUICoordinator
         {
             ToggleSettingsMenu();
         }
+        
+        // Auto-save timer
+        autoSaveTimer += deltaTime;
+        if (autoSaveTimer >= AUTO_SAVE_INTERVAL && settingsChanged)
+        {
+            SaveSettings();
+            autoSaveTimer = 0f;
+        }
+        
+        // Check if settings have changed this frame
+        if (uiManager != null && settings != null)
+        {
+            bool currentChanged = false;
+            
+            // Check for changes
+            if (Math.Abs(settings.FieldOfView - uiManager.FieldOfView) > 0.01f ||
+                Math.Abs(settings.MouseSensitivity - uiManager.MouseSensitivity) > 0.001f)
+            {
+                currentChanged = true;
+            }
+            
+            // If settings changed, save immediately
+            if (currentChanged)
+            {
+                settings.FieldOfView = uiManager.FieldOfView;
+                settings.MouseSensitivity = uiManager.MouseSensitivity;
+                settings.ShowDebugInfo = imGuiHud?.IsDebugInfoVisible() ?? false;
+                SaveSettings();
+            }
+        }
     }
     
     public void UpdateHUD(PlayerHealth? health, Weapon? currentWeapon, int score, 
@@ -123,14 +156,8 @@ public class UICoordinator : IUICoordinator
         
         if (!showSettingsMenu)
         {
-            // Save settings when closing menu
-            if (settings != null && uiManager != null)
-            {
-                settings.FieldOfView = uiManager.FieldOfView;
-                settings.MouseSensitivity = uiManager.MouseSensitivity;
-                settings.ShowDebugInfo = imGuiHud?.IsDebugInfoVisible() ?? false;
-                settings.Save();
-            }
+            // Save settings when closing menu (redundant but ensures save)
+            SaveSettings();
         }
         
         // Update cursor mode
@@ -165,8 +192,22 @@ public class UICoordinator : IUICoordinator
         Initialize();
     }
     
+    public void SaveSettings()
+    {
+        if (settings != null && uiManager != null)
+        {
+            settings.FieldOfView = uiManager.FieldOfView;
+            settings.MouseSensitivity = uiManager.MouseSensitivity;
+            settings.ShowDebugInfo = imGuiHud?.IsDebugInfoVisible() ?? false;
+            settings.Save();
+            settingsChanged = false;
+        }
+    }
+    
     public void Dispose()
     {
+        // Save settings on dispose
+        SaveSettings();
         imGuiController?.Dispose();
         uiManager?.Dispose();
     }

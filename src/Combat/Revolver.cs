@@ -1,9 +1,11 @@
 using System.Numerics;
+using FPSRoguelike.Core;
 
 namespace FPSRoguelike.Combat;
 
 public class Revolver : Weapon
 {
+    private static readonly ILogger logger = new NullLogger(); // Use NullLogger for production
     private const float REVOLVER_DAMAGE = 100f;  // Very high damage per shot
     private const float REVOLVER_FIRE_RATE = 0.8f;  // Slower than katana
     private const float REVOLVER_RANGE = 150f;  // Long range
@@ -57,7 +59,7 @@ public class Revolver : Weapon
         
         isReloading = true;
         reloadTimer = 0f;
-        Console.WriteLine("[Revolver] Reloading...");
+        logger.LogDebug("Revolver reloading...");
     }
     
     public override void Update(float deltaTime)
@@ -73,7 +75,7 @@ public class Revolver : Weapon
                 currentAmmo = REVOLVER_CAPACITY;
                 isReloading = false;
                 reloadTimer = 0f;
-                Console.WriteLine("[Revolver] Reloaded!");
+                logger.LogDebug("Revolver reloaded!");
             }
         }
     }

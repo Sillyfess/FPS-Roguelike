@@ -2,6 +2,7 @@ using System.Numerics;
 using FPSRoguelike.Systems.Interfaces;
 using FPSRoguelike.Combat;
 using FPSRoguelike.Rendering;
+using FPSRoguelike.Core;
 using Silk.NET.OpenGL;
 
 namespace FPSRoguelike.Systems.Core;
@@ -87,13 +88,18 @@ public class WeaponSystem : IWeaponSystem
         
         if (weapon is Katana)
         {
-            // Melee attack
+            // Melee attack using arc collision
             weapon.UpdateFireTiming();
             
-            // Find enemies in melee range
-            var nearbyEnemies = entityManager.GetEnemiesInRange(position, 3f);
+            // Find enemies in the swing arc
+            var enemiesInArc = entityManager.GetEnemiesInArc(
+                position, 
+                aimDirection, 
+                Constants.KATANA_RANGE, 
+                Constants.KATANA_ARC_ANGLE
+            );
             
-            foreach (var enemy in nearbyEnemies)
+            foreach (var enemy in enemiesInArc)
             {
                 enemy.TakeDamage(weapon.Damage);
             }
@@ -112,7 +118,7 @@ public class WeaponSystem : IWeaponSystem
             entityManager.FireProjectile(
                 position,
                 aimDirection,
-                50f, // Projectile speed
+                Constants.DEFAULT_PROJECTILE_SPEED,
                 weapon.Damage,
                 null
             );

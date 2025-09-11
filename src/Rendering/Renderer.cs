@@ -3,11 +3,12 @@ using System.Numerics;
 
 namespace FPSRoguelike.Rendering;
 
-public class Renderer
+public class Renderer : IDisposable
 {
     private GL? gl;
     private int screenWidth;
     private int screenHeight;
+    private bool disposed = false;
     
     public void Initialize(GL glContext, int width, int height)
     {
@@ -54,6 +55,28 @@ public class Renderer
     
     public void Cleanup()
     {
-        // Cleanup resources if needed
+        Dispose();
+    }
+    
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+    
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!disposed)
+        {
+            if (disposing)
+            {
+                // Note: Renderer doesn't currently manage any OpenGL resources directly
+                // All OpenGL resources are managed by RenderingSystem
+                // This is here for future extensibility and proper IDisposable pattern
+                gl = null;
+            }
+            
+            disposed = true;
+        }
     }
 }
