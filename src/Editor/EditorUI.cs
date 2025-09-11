@@ -214,9 +214,8 @@ public class EditorUI : IDisposable
         // Re-enable depth test
         gl.Enable(EnableCap.DepthTest);
         
-        // Note: In a real implementation, we'd render text here using a text rendering library
-        // For now, we're just rendering colored rectangles as placeholders
-        RenderText(state, screenWidth, screenHeight);
+        // Note: Text rendering would require a library like FreeType.
+        // Currently using colored rectangles for UI elements.
     }
     
     private void DrawQuad(float x, float y, float width, float height, Vector3 color, float alpha)
@@ -239,15 +238,6 @@ public class EditorUI : IDisposable
         }
     }
     
-    private void RenderText(EditorState state, float screenWidth, float screenHeight)
-    {
-        // This is a placeholder for text rendering
-        // In a real implementation, we would use a text rendering library like FreeType
-        // or render text to a texture
-        
-        // For now, let's just output the state to console when it changes
-        // This helps with debugging
-    }
     
     /// <summary>
     /// Get formatted help text

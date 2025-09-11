@@ -40,7 +40,7 @@ public class Game : IDisposable
     
     // Removed global hitstop - now handled per-enemy
     
-    // Test cube vertices - need 24 vertices (4 per face) for proper normals
+    // Cube vertices - need 24 vertices (4 per face) for proper normals
     private readonly float[] vertices = 
     {
         // Position           // Normal
@@ -174,8 +174,8 @@ public class Game : IDisposable
         renderer = new Renderer();
         renderer.Initialize(gl, window.Size.X, window.Size.Y);
         
-        // Setup test geometry
-        SetupTestCube();
+        // Setup rendering geometry
+        SetupRenderer();
         
         // Initialize camera and character controller
         characterController = new CharacterController(playerStartPosition);
@@ -433,7 +433,7 @@ public class Game : IDisposable
         else
         {
             // Render 3D scene
-            RenderTestCube(interpolation, deltaTime);
+            RenderGameScene(interpolation, deltaTime);
         }
         
         
@@ -567,7 +567,7 @@ public class Game : IDisposable
         // Debug output moved to main Update for responsiveness
     }
     
-    private void SetupTestCube()
+    private void SetupRenderer()
     {
         // Create and bind VAO
         vao = gl.GenVertexArray();
@@ -882,7 +882,7 @@ void main()
     }
     
     
-    private void RenderTestCube(double interpolation, double renderDeltaTime)
+    private void RenderGameScene(double interpolation, double renderDeltaTime)
     {
         if (camera == null) return;
         

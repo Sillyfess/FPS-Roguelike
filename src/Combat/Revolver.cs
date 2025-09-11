@@ -39,9 +39,8 @@ public class Revolver : Weapon
     {
         if (!CanShoot()) return;
         
-        // Mark as fired by calling base Fire method with dummy parameters
-        // This updates the lastFireTime to prevent rapid firing
-        Fire(Vector3.Zero, Vector3.UnitZ, _ => { });
+        // Update the fire timing to prevent rapid firing
+        UpdateFireTiming();
         
         currentAmmo--;
         
