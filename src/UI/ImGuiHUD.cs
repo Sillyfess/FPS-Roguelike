@@ -4,6 +4,7 @@ using ImGuiNET;
 using FPSRoguelike.Entities;
 using FPSRoguelike.Combat;
 using FPSRoguelike.Physics;
+using FPSRoguelike.Core;
 
 namespace FPSRoguelike.UI;
 
@@ -38,6 +39,9 @@ public class ImGuiHUD
     
     // Minimap data
     private List<MinimapEntity> minimapEntities = new List<MinimapEntity>();
+    
+    // Settings reference
+    private Settings? currentSettings = null;
     
     // Kill feed entry
     private class KillFeedEntry
@@ -497,17 +501,31 @@ public class ImGuiHUD
         ImGui.Text("Game Settings");
         ImGui.Separator();
         
+        // Use actual settings values or defaults if settings not available
+        float sensitivity = currentSettings?.MouseSensitivity ?? 0.3f;
+        float fov = currentSettings?.FieldOfView ?? 90f;
+        float masterVolume = currentSettings?.MasterVolume ?? 1.0f;
+        
         // Mouse sensitivity slider
-        float sensitivity = 0.3f; // Default value, should be from settings
-        ImGui.SliderFloat("Mouse Sensitivity", ref sensitivity, 0.1f, 1.0f);
+        if (ImGui.SliderFloat("Mouse Sensitivity", ref sensitivity, 0.1f, 1.0f))
+        {
+            if (currentSettings != null)
+                currentSettings.MouseSensitivity = sensitivity;
+        }
         
         // FOV slider
-        float fov = 90f; // Default value
-        ImGui.SliderFloat("Field of View", ref fov, 60f, 120f);
+        if (ImGui.SliderFloat("Field of View", ref fov, 60f, 120f))
+        {
+            if (currentSettings != null)
+                currentSettings.FieldOfView = fov;
+        }
         
         // Volume controls
-        float masterVolume = 1.0f;
-        ImGui.SliderFloat("Master Volume", ref masterVolume, 0f, 1f);
+        if (ImGui.SliderFloat("Master Volume", ref masterVolume, 0f, 1f))
+        {
+            if (currentSettings != null)
+                currentSettings.MasterVolume = masterVolume;
+        }
         
         ImGui.Separator();
         
@@ -526,6 +544,8 @@ public class ImGuiHUD
         
         if (ImGui.Button("Resume Game"))
         {
+            // Save settings when closing menu
+            currentSettings?.Save();
             shouldCloseSettings = true;
         }
         
@@ -696,6 +716,12 @@ public class ImGuiHUD
         // Instructions
         ImGui.SetCursorScreenPos(center - new Vector2(50, -radius - 50));
         ImGui.Text("Click to select");
+    }
+    
+    // Method to set the current settings reference
+    public void SetSettings(Settings settings)
+    {
+        currentSettings = settings;
     }
     
     // Damage indicators

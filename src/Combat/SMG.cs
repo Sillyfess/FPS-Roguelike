@@ -56,10 +56,11 @@ public class SMG : Weapon
     {
         if (!CanShoot()) return;
         
-        // Update the fire timing to prevent rapid firing
-        UpdateFireTiming();
-        
+        // Decrement ammo first to ensure we have valid ammo for this shot
         currentAmmo--;
+        
+        // Only update fire timing after successfully consuming ammo
+        UpdateFireTiming();
         
         // Auto-reload when empty
         if (currentAmmo <= 0)

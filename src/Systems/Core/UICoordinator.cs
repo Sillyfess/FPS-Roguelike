@@ -62,13 +62,23 @@ public class UICoordinator : IUICoordinator
         uiManager = new SimpleUIManager();
         
         // Apply loaded settings
-        if (settings != null && uiManager != null)
+        if (settings != null)
         {
-            uiManager.FieldOfView = settings.FieldOfView;
-            uiManager.MouseSensitivity = settings.MouseSensitivity;
-            if (settings.ShowDebugInfo && imGuiHud != null)
+            if (uiManager != null)
             {
-                imGuiHud.ToggleDebugInfo();
+                uiManager.FieldOfView = settings.FieldOfView;
+                uiManager.MouseSensitivity = settings.MouseSensitivity;
+            }
+            
+            if (imGuiHud != null)
+            {
+                // Pass settings reference to ImGuiHUD
+                imGuiHud.SetSettings(settings);
+                
+                if (settings.ShowDebugInfo)
+                {
+                    imGuiHud.ToggleDebugInfo();
+                }
             }
         }
     }

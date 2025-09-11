@@ -65,6 +65,9 @@ public class Enemy
     protected float yRotation = 0f;
     protected bool hasDealtChargeDamage = false;
     
+    // Game timing (accumulated from deltaTime)
+    protected float totalGameTime = 0f;
+    
     // Detection constants
     private const float DEFAULT_DETECTION_RANGE = 20f;
     private const float DEFAULT_LOSE_TARGET_RANGE = 30f;
@@ -135,6 +138,9 @@ public class Enemy
         
         // Apply time scale during hitstop for this enemy only
         float scaledDeltaTime = IsInHitstop ? deltaTime * HITSTOP_TIME_SCALE : deltaTime;
+        
+        // Update total game time for this enemy
+        totalGameTime += scaledDeltaTime;
         
         // Update timers with scaled time
         stateTimer += scaledDeltaTime;
@@ -307,8 +313,7 @@ public class Enemy
         }
         
         // Check for charge opportunity (closer than attack range, charge not on cooldown)
-        float currentTime = (float)DateTime.Now.Subtract(DateTime.UnixEpoch).TotalSeconds;
-        if (distanceToPlayer <= CHARGE_RANGE && currentTime - lastChargeTime >= CHARGE_COOLDOWN)
+        if (distanceToPlayer <= CHARGE_RANGE && totalGameTime - lastChargeTime >= CHARGE_COOLDOWN)
         {
             InitiateCharge();
             return;
@@ -482,7 +487,7 @@ public class Enemy
             chargeDirection = new Vector3(MathF.Sin(yRotation), 0, MathF.Cos(yRotation));
         }
         
-        lastChargeTime = (float)DateTime.Now.Subtract(DateTime.UnixEpoch).TotalSeconds;
+        lastChargeTime = totalGameTime;
         hasDealtChargeDamage = false;
         
         // Initiating charge

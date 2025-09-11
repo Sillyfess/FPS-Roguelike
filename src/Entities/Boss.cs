@@ -54,20 +54,19 @@ public class Boss : Enemy
         }
         
         // Check for charge opportunity
-        float currentTime = (float)DateTime.Now.Subtract(DateTime.UnixEpoch).TotalSeconds;
         if (distanceToPlayer <= BOSS_CHARGE_RANGE && distanceToPlayer > BOSS_MELEE_RANGE && 
-            currentTime - lastChargeTime >= BOSS_CHARGE_COOLDOWN)
+            totalGameTime - lastChargeTime >= BOSS_CHARGE_COOLDOWN)
         {
             InitiateBossCharge();
             return;
         }
         
         // Check for melee attack if very close
-        if (distanceToPlayer <= BOSS_MELEE_RANGE && currentTime - lastMeleeTime >= BOSS_MELEE_COOLDOWN)
+        if (distanceToPlayer <= BOSS_MELEE_RANGE && totalGameTime - lastMeleeTime >= BOSS_MELEE_COOLDOWN)
         {
             // Set flag for melee damage
             hasMeleeReady = true;
-            lastMeleeTime = currentTime;
+            lastMeleeTime = totalGameTime;
         }
         
         // Chase the player
@@ -128,7 +127,7 @@ public class Boss : Enemy
             chargeDirection = new Vector3(MathF.Sin(yRotation), 0, MathF.Cos(yRotation));
         }
         
-        lastChargeTime = (float)DateTime.Now.Subtract(DateTime.UnixEpoch).TotalSeconds;
+        lastChargeTime = totalGameTime;
         hasDealtChargeDamage = false;
         
         // Boss charging
