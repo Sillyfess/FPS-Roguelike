@@ -49,7 +49,7 @@ public class Obstacle
                 break;
                 
             case ObstacleType.Pillar:
-                Size = new Vector3(2f, 8f, 2f);
+                Size = new Vector3(4f, 10f, 4f); // Twice as wide (4x4) and taller
                 Color = new Vector3(0.4f, 0.4f, 0.45f); // Dark gray
                 IsDestructible = false;
                 Health = -1f;

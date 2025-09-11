@@ -1,0 +1,159 @@
+{
+  "Name": "Sample Arena",
+  "Author": "Level Editor",
+  "Version": "1.0.0",
+  "CreatedDate": "2025-01-10T00:00:00",
+  "ModifiedDate": "2025-01-10T00:00:00",
+  "PlayerSpawnPosition": {
+    "x": 0,
+    "y": 1,
+    "z": 0
+  },
+  "PlayerSpawnRotation": 0,
+  "Obstacles": [
+    {
+      "Position": { "x": 0, "y": 5, "z": 0 },
+      "Type": 2,
+      "Rotation": 0,
+      "IsDestructible": false,
+      "Health": -1
+    },
+    {
+      "Position": { "x": 10, "y": 1, "z": 10 },
+      "Type": 0,
+      "Rotation": 0.785,
+      "IsDestructible": true,
+      "Health": 50
+    },
+    {
+      "Position": { "x": -10, "y": 1, "z": 10 },
+      "Type": 0,
+      "Rotation": -0.785,
+      "IsDestructible": true,
+      "Health": 50
+    },
+    {
+      "Position": { "x": 10, "y": 1, "z": -10 },
+      "Type": 0,
+      "Rotation": 2.356,
+      "IsDestructible": true,
+      "Health": 50
+    },
+    {
+      "Position": { "x": -10, "y": 1, "z": -10 },
+      "Type": 0,
+      "Rotation": -2.356,
+      "IsDestructible": true,
+      "Health": 50
+    },
+    {
+      "Position": { "x": 15, "y": 3, "z": 0 },
+      "Type": 1,
+      "Rotation": 1.571,
+      "IsDestructible": false,
+      "Health": -1
+    },
+    {
+      "Position": { "x": -15, "y": 3, "z": 0 },
+      "Type": 1,
+      "Rotation": -1.571,
+      "IsDestructible": false,
+      "Health": -1
+    },
+    {
+      "Position": { "x": 0, "y": 3, "z": 15 },
+      "Type": 1,
+      "Rotation": 0,
+      "IsDestructible": false,
+      "Health": -1
+    },
+    {
+      "Position": { "x": 0, "y": 3, "z": -15 },
+      "Type": 1,
+      "Rotation": 3.142,
+      "IsDestructible": false,
+      "Health": -1
+    },
+    {
+      "Position": { "x": 5, "y": 1.5, "z": 5 },
+      "Type": 3,
+      "Rotation": 0.785,
+      "IsDestructible": true,
+      "Health": 100
+    },
+    {
+      "Position": { "x": -5, "y": 1.5, "z": 5 },
+      "Type": 3,
+      "Rotation": -0.785,
+      "IsDestructible": true,
+      "Health": 100
+    },
+    {
+      "Position": { "x": 5, "y": 1.5, "z": -5 },
+      "Type": 3,
+      "Rotation": 2.356,
+      "IsDestructible": true,
+      "Health": 100
+    },
+    {
+      "Position": { "x": -5, "y": 1.5, "z": -5 },
+      "Type": 3,
+      "Rotation": -2.356,
+      "IsDestructible": true,
+      "Health": 100
+    },
+    {
+      "Position": { "x": 0, "y": 0.25, "z": 20 },
+      "Type": 4,
+      "Rotation": 0,
+      "IsDestructible": false,
+      "Health": -1
+    }
+  ],
+  "EnemySpawns": [
+    {
+      "Position": { "x": 10, "y": 1, "z": 0 },
+      "EnemyType": "Normal",
+      "Health": 100,
+      "SpawnDelay": 0,
+      "WaveNumber": 1
+    },
+    {
+      "Position": { "x": -10, "y": 1, "z": 0 },
+      "EnemyType": "Normal",
+      "Health": 100,
+      "SpawnDelay": 0,
+      "WaveNumber": 1
+    },
+    {
+      "Position": { "x": 0, "y": 1, "z": 10 },
+      "EnemyType": "Normal",
+      "Health": 150,
+      "SpawnDelay": 0,
+      "WaveNumber": 2
+    },
+    {
+      "Position": { "x": 0, "y": 1, "z": -10 },
+      "EnemyType": "Normal",
+      "Health": 150,
+      "SpawnDelay": 0,
+      "WaveNumber": 2
+    },
+    {
+      "Position": { "x": 0, "y": 1, "z": 20 },
+      "EnemyType": "Boss",
+      "Health": 500,
+      "SpawnDelay": 0,
+      "WaveNumber": 3
+    }
+  ],
+  "Settings": {
+    "Gravity": -20,
+    "AmbientLight": 0.4,
+    "SkyColor": { "x": 0.2, "y": 0.3, "z": 0.5 },
+    "FogColor": { "x": 0.5, "y": 0.5, "z": 0.5 },
+    "FogDensity": 0.01,
+    "EnableFog": false,
+    "ArenaRadius": 50
+  }
+}

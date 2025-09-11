@@ -10,6 +10,7 @@ using FPSRoguelike.Combat;
 using FPSRoguelike.Entities;
 using FPSRoguelike.UI;
 using FPSRoguelike.Environment;
+using FPSRoguelike.Editor;
 
 namespace FPSRoguelike.Core;
 
@@ -21,6 +22,10 @@ public class Game : IDisposable
     private Renderer? renderer;
     private SimpleUIManager? uiManager;
     private bool showSettingsMenu = false;
+    
+    // Level Editor
+    private LevelEditor? levelEditor;
+    private bool editorMode = false;
     
     // Timing
     private double accumulator = 0.0;
@@ -190,6 +195,9 @@ public class Game : IDisposable
         // Initialize player health
         playerHealth = new PlayerHealth(100f);
         
+        // Initialize level editor
+        levelEditor = new LevelEditor(gl);
+        
         // Initialize UI Manager
         uiManager = new SimpleUIManager();
         
@@ -221,6 +229,7 @@ public class Game : IDisposable
         Console.WriteLine("  R - Reload revolver");
         Console.WriteLine("  F1 - Debug info");
         Console.WriteLine("  F2 - Spawn more enemies");
+        Console.WriteLine("  F3 - Toggle Level Editor");
         Console.WriteLine("  ESC - Exit");
         Console.WriteLine("\nObjective: Survive and destroy all enemies!");
     }
@@ -365,8 +374,25 @@ public class Game : IDisposable
             Console.WriteLine("Boss spawned!");
         }
         
-        // Only update game when not paused
-        if (uiManager?.IsPaused != true)
+        // Toggle Level Editor - F3
+        if (inputSystem?.IsKeyJustPressed(Key.F3) == true)
+        {
+            editorMode = !editorMode;
+            levelEditor?.Toggle();
+            Console.WriteLine($"Level Editor: {(editorMode ? "ON" : "OFF")}");
+        }
+        
+        // Update editor if active
+        if (editorMode && levelEditor != null && inputSystem != null)
+        {
+            levelEditor.Update((float)deltaTime, inputSystem);
+            
+            // Use editor's obstacle list instead of hardcoded one
+            obstacles = levelEditor.GetLevelObstacles();
+        }
+        
+        // Only update game when not paused and not in editor mode
+        if (uiManager?.IsPaused != true && !editorMode)
         {
             accumulator += deltaTime;
             
@@ -407,8 +433,16 @@ public class Game : IDisposable
         
         double interpolation = accumulator / FIXED_TIMESTEP;
         
-        // Render 3D scene
-        RenderTestCube(interpolation, deltaTime);
+        // Render based on mode
+        if (editorMode)
+        {
+            RenderEditorView();
+        }
+        else
+        {
+            // Render 3D scene
+            RenderTestCube(interpolation, deltaTime);
+        }
         
         // Render UI elements
         if (uiManager?.IsPaused != true)
@@ -804,6 +838,38 @@ void main()
         gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
     }
     
+    private void RenderEditorView()
+    {
+        if (levelEditor == null) return;
+        
+        var editorCamera = levelEditor.GetCamera();
+        float aspectRatio = (float)window.Size.X / (float)window.Size.Y;
+        
+        Matrix4x4 view = editorCamera.GetViewMatrix();
+        Matrix4x4 projection = editorCamera.GetProjectionMatrix(aspectRatio);
+        
+        // Render level editor grid and UI
+        levelEditor.Render(window.Size.X, window.Size.Y);
+        
+        // Render obstacles from the level
+        foreach (var obstacle in obstacles)
+        {
+            if (obstacle.IsDestroyed) continue;
+            
+            Matrix4x4 obstacleModel = Matrix4x4.CreateScale(obstacle.Size) *
+                                      Matrix4x4.CreateRotationY(obstacle.Rotation) *
+                                      Matrix4x4.CreateTranslation(obstacle.Position);
+            RenderCube(obstacleModel, view, projection, obstacle.Color);
+        }
+        
+        // Render ground plane
+        RenderCube(
+            Matrix4x4.CreateScale(50f, 0.1f, 50f) * 
+            Matrix4x4.CreateTranslation(0, -0.05f, 0),
+            view, projection,
+            new Vector3(0.3f, 0.3f, 0.3f)
+        );
+    }
     
     
     private void RenderTestCube(double interpolation, double renderDeltaTime)
@@ -1111,6 +1177,7 @@ void main()
                 crosshair?.Dispose();
                 hud?.Dispose();
                 slashEffect?.Dispose();
+                levelEditor?.Dispose();
             }
             
             // Clean up unmanaged resources (OpenGL)
@@ -1468,6 +1535,6 @@ void main()
         obstacles.Clear();
         
         // One central pillar
-        obstacles.Add(new Obstacle(new Vector3(0f, 6f, 0f), ObstacleType.Pillar));
+        obstacles.Add(new Obstacle(new Vector3(0f, 5f, 0f), ObstacleType.Pillar)); // Position at y=5 so it reaches ground
     }
 }
